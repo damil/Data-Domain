@@ -1,10 +1,8 @@
-Build.PL
+Build.pl
 Changes
-MANIFEST
-META.yml # Will be created by "make dist"
-README
 lib/Data/Domain.pm
-t/00-load.t
-t/boilerplate.t
+MANIFEST			This list of files
+README
+t/data-domain.t
 t/pod-coverage.t
 t/pod.t

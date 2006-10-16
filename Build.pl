@@ -10,6 +10,7 @@ my $builder = Module::Build->new(
     build_requires => {
         'Test::More'   => 0,
         'Scalar::Util' => 0,
+        'List::Util'   => 0,
         'Date::Calc'   => 0,
     },
     add_to_cleanup      => [ 'Data-Domain-*' ],
