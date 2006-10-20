@@ -6,3 +6,4 @@ README
 t/data-domain.t
 t/pod-coverage.t
 t/pod.t
+META.yml

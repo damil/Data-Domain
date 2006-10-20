@@ -351,7 +351,7 @@ my $msg = $dom->inspect("foobar");
 is($msg, "Int: nombre incorrect", "msg français");
 
 $dom = Int(-name => "PositiveInt", -min => 0);
-my $msg = $dom->inspect("foobar");
+$msg = $dom->inspect("foobar");
 is($msg, "PositiveInt: nombre incorrect", "msg français");
 
 

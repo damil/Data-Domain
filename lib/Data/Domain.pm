@@ -1,5 +1,5 @@
 #======================================================================
-package Data::Domain;
+package Data::Domain; # documentation at end of file
 #======================================================================
 use strict;
 use warnings;
@@ -812,15 +812,13 @@ Data::Domain - Data description and validation
                        Date(-min => $context->{flat}{aDate})},
     aString    => String(-min_length => 2, -optional => 1),
     anEnum     => Enum(qw/foo bar buz/),
-    aCodeList  => CodeList(foo => "This is the foo value",
-                           bar => "This is the bar value"),
     anIntList  => List(-min_size => 1, -all => Int),
     aMixedList => List(Integer, String, Int(-min => 0), Date),
     aStruct    => Struct(foo => String, bar => Int(-optional => 1))
   );
 
   my $messages = $domain->inspect($some_data);
-  display_error($messages) if $messages;
+  my_display_error($messages) if $messages;
 
 =head1 DESCRIPTION
 
@@ -835,13 +833,16 @@ a structured set of error messages is returned.
 The motivation for writing this package was to be able to express in a
 compact way some possibly complex constraints about structured
 data. The data is a Perl tree (nested hashrefs or arrayrefs) that may
-come from XML, L<JSON|JSON>, or from postprocessing an HTML form
+come from XML, L<JSON|JSON>, from a database through
+L<DBIx::DataModel|DBIx::DataModel>, or from postprocessing an HTML form
 through L<CGI::Expand|CGI::Expand>. C<Data::Domain> is a kind of tree
-parser on that structure. Other packages doing data validation are
-briefly listed in the L<SEE ALSO|SEE ALSO> section.
+parser on that structure, with some facilities for dealing
+with dependencies within the structure through lazy 
+evaluation of domains. Other packages doing data validation are
+briefly listed in the L</"SEE ALSO"> section. 
 
-B<This is still alpha code; don't use in production, the API 
- may change in future versions>.
+B<DISCLAIMER : this code is still in design exploration phase; 
+  some parts of the API may change in future versions>.
 
 =head1 FUNCTIONS
 
@@ -1495,9 +1496,13 @@ Here is an example of a domain for ordered lists of integers:
 
 =head3 Recursive domains
 
+A domain for expression trees, where leaves are numbers,
+and intermediate nodes are binary operators on subtrees
+
   my $expr_domain = One_of(Num, Struct(operator => String(qr(^[-+*/]$)),
                                        left     => sub {$expr_domain},
                                        right    => sub {$expr_domain}));
+
 
 =head1 WRITING NEW DOMAIN CONSTRUCTORS
 
@@ -1505,8 +1510,6 @@ Implementing new domain constructors is fairly simple : create
 a subclass of C<Data::Domain> and implement a C<new> method and
 an C<_inspect> method. See the source code of C<Data::Domain::Num> or 
 C<Data::Domain::String> for short examples.
-
-[[MORE EXPLANATIONS TO COME]]
 
 However, before writing such a class, consider whether the existing
 mechanisms are not enough for your needs. For example, many
@@ -1517,7 +1520,7 @@ domains could be expressed as a C<String> with a regular expression:
   my $Contact_dom = Struct(name   => String,
                            phone  => $Phone_dom,
                            mobile => $Phone_dom,
-                           emails => List(-all => $Email_dom),);
+                           emails => List(-all => $Email_dom));
 
 
 =head1 SEE ALSO
@@ -1525,19 +1528,29 @@ domains could be expressed as a C<String> with a regular expression:
 Doc and tutorials on complex Perl data structures:
 L<perlref>, L<perldsc>, L<perllol>.
 
-Other modules doing data validation (yet without structured
-data nor lazy constructors) :
+Other CPAN modules doing data validation :
+L<Data::FormValidator|Data::FormValidator>,
+L<CGI::FormBuilder|CGI::FormBuilder>,
+L<HTML::Widget::Constraint|HTML::Widget::Constraint>,
+L<Jifty::DBI|Jifty::DBI>,
+L<Data::Constraint|Data::Constraint>,
+L<Declare::Constraints::Simple|Declare::Constraints::Simple>.
+Among those, C<Declare::Constraints::Simple> is the closest to 
+C<Data::Domain>, because it is also designed to deal with
+substructures; yet it has a different approach to combinations
+of constraints and scope dependencies.
 
-L<Data::FormValidator|Data::FormValidator>
-L<CGI::FormBuilder|CGI::FormBuilder>
-L<HTML::Widget::Constraint|HTML::Widget::Constraint>
-L<Jifty|Jifty>
+Some inspiration for C<Data::Domain> came from the wonderful
+L<Parse::RecDescent|Parse::RecDescent> module, especially
+the idea of passing a context where individual rules can grab
+information about neighbour nodes.
+
 
 =head1 TODO
 
   - generate javascript validation code
   - normalization / conversions (-filter option)
-  - callbacks (-filter_msg option)
+  - msg callbacks (-filter_msg option)
   - default values within domains ? (good idea ?)
 
 =head1 AUTHOR
