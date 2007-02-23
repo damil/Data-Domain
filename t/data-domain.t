@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More 'no_plan' ; # tests => 1;
+use Test::More tests => 123;
 use Data::Dumper;
 
 BEGIN {
@@ -75,7 +75,7 @@ ok(!$dom->inspect(-3.33), "Num / ok");
 ok($dom->inspect(undef), "Num / undef");
 ok($dom->inspect("foo"), "Num / string");
 
-$dom = Num(-min => -1, -max => 1, -not_in => [0.5, 0.7]);
+$dom = Num(-range => [-1, 1], -not_in => [0.5, 0.7]);
 ok(!$dom->inspect(-1), "Num / bounds");
 ok(!$dom->inspect(0), "Num / bounds");
 ok(!$dom->inspect(1), "Num / bounds");
@@ -104,7 +104,7 @@ ok(!$dom->inspect('01.02.2003'), "Date / ok");
 ok($dom->inspect('foo'), "Date / fail");
 ok($dom->inspect('31.02.2003'), "Date / fail");
 
-$dom = Date(-min => '01.01.2001', -max => 'today', 
+$dom = Date(-range => ['01.01.2001', 'today'], 
             -not_in => [qw/02.02.2002 yesterday/]);
 ok($dom->inspect('01.01.1991'), "Date / bounds");
 ok($dom->inspect('01.01.2991'), "Date / bounds");
@@ -120,7 +120,7 @@ ok(!$dom->inspect('10:14'), "Time / ok");
 ok($dom->inspect('foobar'), "Time / invalid");
 ok($dom->inspect('25:99'), "Time / invalid");
 
-$dom = Time(-min => '08:00', -max => '16:00');
+$dom = Time(-range => ['08:00', '16:00']);
 ok(!$dom->inspect('12:12'), "Time / ok bounds");
 ok($dom->inspect('06:12'), "Time / bounds");
 ok($dom->inspect('23:12'), "Time / bounds");
@@ -143,10 +143,8 @@ ok($dom->inspect("fail"), "String / regex");
 
 $dom = String(-regex      => qr/^foo/,
               -antiregex  => qr/bar/,
-              -min_length => 5,
-              -max_length => 10,
-              -min        => 'fooAB',
-              -max        => 'foozz',
+              -length     => [5, 10],
+              -range      => ['fooAB', 'foozz'],
               -not_in     => [qw/foo_foo_foo foo_foo_bar/],
              );
 ok(!$dom->inspect("foo_foo"), "String / ok regex");
@@ -186,13 +184,13 @@ ok($dom->inspect([]), "List fail2");
 ok(!$dom->inspect([1, 2]), "List optional");
 ok(!$dom->inspect([1, 2, {}]), "List wrong optional");
 
-$dom = List(-min_size => 2, -max_size => 5, -all => Int);
+$dom = List(-size => [2, 5], -all => Int);
 ok(!$dom->inspect([1, 2, 3]), "List ok");
 ok($dom->inspect([1]), "List min_size");
 ok($dom->inspect([1 .. 6]), "List max_size");
 ok($dom->inspect([1, 2, 3, "foo"]), "List not all");
 
-$dom = List(-min_size => 2, -max_size => 5, -any => Int);
+$dom = List(-size => [2, 5], -any => Int);
 ok(!$dom->inspect([1, 2, 3]), "List ok");
 ok($dom->inspect([qw/foo bar buz/]), "List not any");
 ok(!$dom->inspect([qw/foo bar buz/, 3]), "List any");
@@ -359,12 +357,6 @@ $dom = Int(-messages => "fix that number");
 $msg = $dom->inspect("foobar");
 is($msg, "Int: fix that number", "msg string");
 
-$dom = Int(-min => 4, 
-           -max => 5,
-           -messages => {Generic => {TOO_SMALL => "too small", 
-                                     TOO_BIG => "too big"}}); 
-$msg = $dom->inspect(99);
-is($msg, "Int: too big", "msg generic");
 
 $dom = Int(-min => 4, 
            -max => 5,
@@ -373,6 +365,35 @@ $dom = Int(-min => 4,
 $msg = $dom->inspect(99);
 is($msg, "Int: too big", "msg direct");
 
+$dom = Int(-min => 4, 
+           -max => 5,
+           -messages => sub {"got an error ($_[0])"});
+$msg = $dom->inspect(99);
+is($msg, "got an error (TOO_BIG)", "msg sub");
+
+Data::Domain->messages(sub {"validation error ($_[0])"});
+$dom = Int(-min => 0);
+$msg = $dom->inspect(-99);
+is($msg, "validation error (TOO_SMALL)", "msg global sub");
+
+
+
+#----------------------------------------------------------------------
+# examples from doc
+#----------------------------------------------------------------------
+
+sub Phone   { String(-regex => qr/^\+?[0-9() ]+$/, @_) }
+sub Email   { String(-regex => qr/^[-.\w]+\@[\w.]+$/, @_) }
+sub Contact { Struct(-fields => [name   => String,
+                                 phone  => Phone,
+                                 mobile => Phone(-optional => 1),
+                                 emails => List(-all => Email)], @_) }
+
+$msg = Contact->inspect({name => "Foo", 
+                         phone => 12345,
+                         emails => ['foo.bar@foo.com']});
+
+ok(!$msg, "contact OK");
 
 
 

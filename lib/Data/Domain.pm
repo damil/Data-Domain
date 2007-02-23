@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.01";
+our $VERSION = "0.03";
 
 my @builtin_domains = qw/Whatever
                          Num Int Date Time String
@@ -28,121 +28,142 @@ foreach my $subclass (@builtin_domains) {
 
 
 my $builtin_msgs = {
- english => {
-  Generic => { 
-    INVALID => "invalid", 
-    TOO_SMALL => "smaller than minimum %s",
-    TOO_BIG   => "bigger than maximum %s", 
-    EXCLUSION_SET => "belongs to exclusion set",
+  english => {
+    Generic => {
+      UNDEFINED     => "undefined data",
+      INVALID       => "invalid",
+      TOO_SMALL     => "smaller than minimum %s",
+      TOO_BIG       => "bigger than maximum %s",
+      EXCLUSION_SET => "belongs to exclusion set",
+    },
+    Whatever => {
+      MATCH_DEFINED => "data defined/undefined",
+      MATCH_TRUE    => "data true/false",
+      MATCH_ISA     => "is not a %s",
+      MATCH_CAN     => "does not have method %s",
+    },
+    Num    => {INVALID => "invalid number",},
+    Date   => {INVALID => "invalid date",},
+    String => {
+      TOO_SHORT        => "less than %d characters",
+      TOO_LONG         => "more than %d characters",
+      SHOULD_MATCH     => "should match %s",
+      SHOULD_NOT_MATCH => "should not match %s",
+    },
+    Enum => {NOT_IN_LIST => "not in enumeration list",},
+    List => {
+      NOT_A_LIST => "is not an arrayref",
+      TOO_SHORT  => "less than %d items",
+      TOO_LONG   => "more than %d items",
+    },
+    Struct => {
+      NOT_A_HASH      => "is not a hashref",
+      FORBIDDEN_FIELD => "contains forbidden field: %s"
+    },
   },
-  Whatever     => {
-    MATCH_DEFINED => "data defined/undefined",
-    MATCH_TRUE => "data true/false",
-    MATCH_ISA =>  "is not a %s",
-    MATCH_CAN =>  "does not have method %s",
-   },
-  Num     => {
-    INVALID   => "invalid number",
-  },
-  Date => {
-    INVALID   => "invalid date",
-  },
-  String => {
-    TOO_SHORT        => "less than %d characters",
-    TOO_LONG         => "more than %d characters",
-    SHOULD_MATCH     => "should match %d",
-    SHOULD_NOT_MATCH => "should not match %d",
-  },
-  Enum     => { NOT_IN_LIST => "not in enumeration list", },
-  List     => {
-    NOT_A_LIST => "is not an arrayref",
-    TOO_SHORT  => "less than %d items",
-    TOO_LONG   => "more than %d items",
-  },
-  Struct => { NOT_A_HASH => "is not a hashref", 
-              FORBIDDEN_FIELD => "contains forbidden field: %s"
-             },
- },
 
- "français" => {
-  Generic => {
-    INVALID => "incorrect", 
-    TOO_SMALL => "plus petit que le minimum %s",
-    TOO_BIG   => "plus grand que le maximum %s",
-    EXCLUSION_SET => "fait partie des valeurs interdites",
-   },
-  Whatever     => {
-    MATCH_DEFINED => "donnée définie/non définie",
-    MATCH_TRUE => "donnée vraie/fausse",
-    MATCH_ISA =>  "n'est pas un  %s",
-    MATCH_CAN =>  "n'a pas la méthode %s",
-   },
-  Num => {
-    INVALID   => "nombre incorrect",
-   },
-  Date => {
-    INVALID   => "date incorrecte",
-   },
-  String => {
-    TOO_SHORT => "moins de %d caractères",
-    TOO_LONG  => "plus de %d caractères",
-    SHOULD_MATCH     => "devrait être reconnu par la regex %d",
-    SHOULD_NOT_MATCH => "ne devrait pas être reconnu par la regex %d",
+  "français" => {
+    Generic => {
+      UNDEFINED     => "donnée non définie",
+      INVALID       => "incorrect",
+      TOO_SMALL     => "plus petit que le minimum %s",
+      TOO_BIG       => "plus grand que le maximum %s",
+      EXCLUSION_SET => "fait partie des valeurs interdites",
+    },
+    Whatever => {
+      MATCH_DEFINED => "donnée définie/non définie",
+      MATCH_TRUE    => "donnée vraie/fausse",
+      MATCH_ISA     => "n'est pas un  %s",
+      MATCH_CAN     => "n'a pas la méthode %s",
+    },
+    Num    => {INVALID => "nombre incorrect",},
+    Date   => {INVALID => "date incorrecte",},
+    String => {
+      TOO_SHORT        => "moins de %d caractères",
+      TOO_LONG         => "plus de %d caractères",
+      SHOULD_MATCH     => "devrait être reconnu par la regex %s",
+      SHOULD_NOT_MATCH => "ne devrait pas être reconnu par la regex %s",
+    },
+    Enum => {NOT_IN_LIST => "n'appartient pas à la liste énumérée",},
+    List => {
+      NOT_A_LIST => "n'est pas une arrayref",
+      TOO_SHORT  => "moins de %d éléments",
+      TOO_LONG   => "plus de %d éléments",
+    },
+    Struct => {
+      NOT_A_HASH      => "n'est pas une hashref",
+      FORBIDDEN_FIELD => "contient le champ interdit: %s",
+    },
   },
-  Enum => {
-    NOT_IN_LIST => "n'appartient pas à la liste énumérée",
-   },
-  List => {
-    NOT_A_LIST => "n'est pas une arrayref",
-    TOO_SHORT => "moins de %d éléments",
-    TOO_LONG  => "plus de %d éléments",
-   },
-  Struct => {
-    NOT_A_HASH    => "n'est pas une hashref",
-    FORBIDDEN_FIELD => "contient le champ interdit: %s",
-  },
- },
 };
 
 # inherit Int messages from Num messages
-foreach my $key (keys %$builtin_msgs) {
-  next if $key eq 'Generic';
-  $builtin_msgs->{$key}{Int} = $builtin_msgs->{$key}{Num};
+foreach my $language (keys %$builtin_msgs) {
+  $builtin_msgs->{$language}{Int} = $builtin_msgs->{$language}{Num};
 }
 
-
+# default messages : english
 my $global_msgs = $builtin_msgs->{english};
 
+#----------------------------------------------------------------------
+# PUBLIC METHODS
+#----------------------------------------------------------------------
 
-sub messages {
+sub messages { # private class method
   my ($class, $new_messages) = @_;
-  croak "messages() is a class method" if ref $class;
+  croak "messages() is a class method in Data::Domain" 
+    if ref $class or $class ne 'Data::Domain';
+
   $global_msgs = (ref $new_messages) ? $new_messages 
                                      : $builtin_msgs->{$new_messages}
     or croak "no such builtin messages ($new_messages)";
 }
 
 
+sub inspect {
+  my ($self, $data, $context) = @_;
+
+  return $self->_inspect($data, $context)
+    if defined($data);
+
+  # otherwise, if data is undefined
+  return if $self->{-optional};                # optional domains always succeed
+  return $self->_inspect($data, $context)
+    if ref $self eq 'Data::Domain::Whatever';  # that one wants to check for himself
+  return $self->msg(UNDEFINED => '');          # otherwise : error
+}
+
+#----------------------------------------------------------------------
+# METHODS FOR INTERNAL USE
+#----------------------------------------------------------------------
+
+
 sub msg {
   my ($self, $msg_id, @args) = @_;
-  my $msgs     = $self->{-messages} || $global_msgs;
+  my $msgs     = $self->{-messages};
   my $subclass = $self->subclass;
   my $name     = $self->{-name} || $subclass;
+  my $msg;
 
-  for (ref $msgs) {
-    /CODE/ and return $msgs->($msg_id, @args);
-    /HASH/ and do {
-      my $msg = $msgs->{$subclass}{$msg_id} 
-             || $msgs->{Generic}{$msg_id} 
-             || $msgs->{$msg_id} 
-          or croak "no error string for message $msg_id";
-      return "$name: " . sprintf($msg, @args);
-    };
-    /^$/ and $msgs and return "$name: $msgs"; # just plain string
-
-    #otherwise
-    croak "can't generate error message ($msgs)";
+  # if user_defined messages
+  if (defined $self->{-messages}) { 
+    for (ref $self->{-messages}) {
+      /CODE/ and return $self->{-messages}->($msg_id, @args); # user function
+      /^$/   and return "$name: $msgs";                       # user constant string
+      /HASH/ and do { $msg =  $self->{-messages}{$msg_id}     # user hash of msgs
+                        and return sprintf "$name: $msg", @args;
+                      last; # not found in this hash - revert to $global_msgs
+                    };
+      croak "invalid -messages option";                       # otherwise
+    }
   }
+
+  # if not found, try global messages
+  return $global_msgs->($msg_id, @args)      if ref $global_msgs eq 'CODE';
+  $msg = $global_msgs->{$subclass}{$msg_id}  # otherwise
+      || $global_msgs->{Generic}{$msg_id}
+     or croak "no error string for message $msg_id";
+  return sprintf "$name: $msg", @args; 
 }
 
 
@@ -154,14 +175,32 @@ sub subclass {
 }
 
 
-sub inspect {
-  my ($self, $data, $context) = @_;
-  return if $self->{-optional} and not defined($data);
-  return $self->_inspect($data, $context); # otherwise
+
+sub _check_range {
+  my ($self, $range_field, $min_field, $max_field, $ignore_check) = @_;
+  my $name = $self->{-name} || $self->subclass;
+
+  if (my $range = delete $self->{$range_field}) {
+    for ($min_field, $max_field) {
+      not defined $self->{$_}
+        or croak  "$name: incompatible options: $range_field / $_";
+    }
+    UNIVERSAL::isa($range, 'ARRAY') and @$range == 2
+        or croak  "$name: invalid argument for $range";
+    @{$self}{$min_field, $max_field} = @$range;
+  }
+
+  if (!$ignore_check and defined($self->{$min_field}) 
+                     and defined($self->{$max_field})) {
+    $self->{$min_field} <= $self->{$max_field}
+      or croak "$name: incoherent min/max values";
+  }
 }
 
 
+#----------------------------------------------------------------------
 # UTILITY FUNCTIONS (NOT METHODS) 
+#----------------------------------------------------------------------
 
 # valid options for all subclasses
 my @common_options = qw/-optional -name -messages/; 
@@ -189,6 +228,7 @@ sub _parse_args {
       : $arg_type eq 'arrayref' ? $args_ref
       : croak "unknown type for default option: $arg_type";
   }
+
   return \%parsed;
 }
 
@@ -206,6 +246,9 @@ sub node_from_path {
   croak "node_from_path: incorrect root/path";
 }
 
+
+
+
 #======================================================================
 package Data::Domain::Whatever;
 #======================================================================
@@ -218,9 +261,12 @@ sub new {
   my $class   = shift;
   my @options = qw/-defined -true -isa -can/;
   my $self    = Data::Domain::_parse_args( \@_, \@options );
+  bless $self, $class;
+
   croak "both -defined and -optional: meaningless!"
     if $self->{-defined } and $self->{-optional};
-  bless $self, $class;
+
+  return $self;
 }
 
 sub _inspect {
@@ -245,7 +291,7 @@ sub _inspect {
         or return $self->msg(MATCH_CAN => $method);
     }
   }
-  return;    #otherwise
+  return;    # otherwise : success
 }
 
 
@@ -261,18 +307,19 @@ our @ISA = 'Data::Domain';
 
 sub new {
   my $class = shift;
-  my @options = qw/-min -max -not_in/;
+  my @options = qw/-range -min -max -not_in/;
   my $self = Data::Domain::_parse_args(\@_, \@options);
-  if (defined($self->{-min}) and defined($self->{-max})) {
-    $self->{-min} <= $self->{-max}
-      or croak "Num domain: incoherent min/max values";
-  }
+  bless $self, $class;
+
+  $self->_check_range(qw/-range -min -max/);
+
   if ($self->{-not_in}) {
     eval {my $vals = $self->{-not_in};
           @$vals > 0 and not grep {!looks_like_number($_)} @$vals}
       or croak "-not_in : needs an arrayref of numbers";
   }
-  bless $self, $class;
+
+  return $self;
 }
 
 sub _inspect {
@@ -326,10 +373,21 @@ our @ISA = 'Data::Domain';
 sub new {
   my $class = shift;
   my @options = qw/-regex -antiregex
-                   -min_length -max_length 
-                   -min -max -not_in/;
+                   -range -min -max 
+                   -length -min_length -max_length 
+                   -not_in/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -regex => 'scalar');
   bless $self, $class;
+
+  $self->_check_range(qw/-range -min -max don_t_check_order/);
+  if ($self->{-min} and $self->{-max} and
+        $self->{-min} gt $self->{-max}) {
+    croak "String: incoherent min/max values";
+  }
+
+  $self->_check_range(qw/-length -min_length -max_length/);
+
+  return $self;
 }
 
 sub _inspect {
@@ -379,28 +437,15 @@ use warnings;
 use Carp;
 our @ISA = 'Data::Domain';
 
-# TODO: extend API to choose between EU/US dates
 
 use autouse 'Date::Calc' => qw/Decode_Date_EU Decode_Date_US Date_to_Text
                                Delta_Days  Add_Delta_Days Today/;
 
-my $parser = \&Decode_Date_EU;
+my $date_parser = \&Decode_Date_EU;
 
-sub parser {
-  my ($class, $new_parser) = @_;
-  if ($new_parser) {
-    if (ref $new_parser) {
-      $parser = $new_parser;
-    }
-    else {
-      $parser = ($new_parser eq 'US') ? \&Decode_Date_US
-               : ($new_parser eq 'EU') ? \&Decode_Date_EU
-               : croak "unknown date parser : $new_parser";
-    }
-  }
-  return $parser;
-}
-
+#----------------------------------------------------------------------
+# utility functions 
+#----------------------------------------------------------------------
 sub _print_date {
   my $date = shift;
   return ref($date) ? Date_to_Text(@$date) : $date;
@@ -409,35 +454,66 @@ sub _print_date {
 
 my $dynamic_date = qr/^(today|yesterday|tomorrow)$/;
 
-sub _date_cmp {
-  my ($d1, $d2) = @_;
-  if (!ref($d2)) {
-    $d2 = {
+sub _expand_dynamic_date {
+  my $date = shift;
+  if (not ref $date) {
+    $date = {
       today     => [Today], 
       yesterday => [Add_Delta_Days(Today, -1)],
       tomorrow  => [Add_Delta_Days(Today, +1)]
-     }->{$d2} or croak "unexpected date : $d2";
+     }->{$date} or croak "unexpected date : $date";
   }
+  return $date;
+}
+
+sub _date_cmp {
+  my ($d1, $d2) = map {_expand_dynamic_date($_)} @_;
   return -Delta_Days(@$d1, @$d2);
 }
 
+
+#----------------------------------------------------------------------
+# public API
+#----------------------------------------------------------------------
+
+sub parser {
+  my ($class, $new_parser) = @_;
+  not ref $class or croak "Data::Domain::Date::parser is a class method";
+
+  $date_parser = 
+    (ref $new_parser eq 'CODE')
+    ? $new_parser
+    : {US => \&Decode_Date_US,
+       EU => \&Decode_Date_EU}->{$new_parser}
+    or croak "unknown date parser : $new_parser";
+  return $date_parser;
+}
+
+
 sub new {
   my $class   = shift;
-  my @options = qw/-min -max -not_in/;
+  my @options = qw/-range -min -max -not_in/;
   my $self    = Data::Domain::_parse_args(\@_, \@options);
+  bless $self, $class;
 
-  if ($self->{-min} and $self->{-min} !~ $dynamic_date) {
-    my @min_date = $parser->($self->{-min})
-      or croak "invalid date: $self->{-min}";
-    $self->{-min} = \@min_date;
+  $self->_check_range(qw/-range -min -max don_t_check_order/);
+
+  # parse date boundaries into internal representation (arrayrefs)
+  for my $bound (qw/-min -max/) {
+    if ($self->{$bound} and $self->{$bound} !~ $dynamic_date) {
+      my @date = $date_parser->($self->{$bound})
+        or croak "invalid date ($bound): $self->{$bound}";
+      $self->{$bound} = \@date;
+    }
   }
 
-  if ($self->{-max} and $self->{-max} !~ $dynamic_date) {
-    my @max_date = $parser->($self->{-max})
-      or croak "invalid date: $self->{-max}";
-    $self->{-max} = \@max_date;
+  # check order of boundaries
+  if ($self->{-min} and $self->{-max} and 
+        _date_cmp($self->{-min}, $self->{-max}) > 0) {
+    croak "Date: incoherent min/max values";
   }
 
+  # parse dates in the exclusion set into internal representation
   if ($self->{-not_in}) {
     my @excl_dates;
     eval {
@@ -447,7 +523,7 @@ sub new {
           push @excl_dates, $date;
         }
         else {
-          my @parsed_date = $parser->($date) or die "wrong date";
+          my @parsed_date = $date_parser->($date) or die "wrong date";
           push @excl_dates, \@parsed_date;
         }
       }
@@ -457,14 +533,14 @@ sub new {
     $self->{-not_in} = \@excl_dates;
   }
 
-  bless $self, $class;
+  return $self;
 }
 
 
 sub _inspect {
   my ($self, $data) = @_;
 
-  my @date = $parser->($data) 
+  my @date = $date_parser->($data) 
     or return $self->msg(INVALID => $data);
 
   if (defined $self->{-min}) {
@@ -509,29 +585,34 @@ sub _time_cmp {
 
   return  $t1->[0]       <=>  $t2->[0]        # hours
       || ($t1->[1] || 0) <=> ($t2->[1] || 0)  # minutes
-      || ($t1->[2] || 0) <=> ($t2->[2] || 0);  # seconds
+      || ($t1->[2] || 0) <=> ($t2->[2] || 0); # seconds
 }
 
 sub new {
   my $class = shift;
-  my @options = qw/-min -max/;
+  my @options = qw/-range -min -max/;
   my $self = Data::Domain::_parse_args(\@_, \@options);
-
-  if ($self->{-min} and $self->{-min} ne 'now') {
-    my @min_time = ($self->{-min} =~ $time_regex);
-    @min_time && _valid_time(@min_time)
-      or croak "invalid time: $self->{-min}";
-    $self->{-min} = \@min_time;
-  }
-
-  if ($self->{-max} and $self->{-max} ne 'now') {
-    my @max_time = ($self->{-max} =~ $time_regex);
-    @max_time && _valid_time(@max_time)
-      or croak "invalid time: $self->{-max}";
-    $self->{-max} = \@max_time;
-  }
-
   bless $self, $class;
+
+  $self->_check_range(qw/-range -min -max don_t_check_order/);
+
+  # parse time boundaries
+  for my $bound (qw/-min -max/) {
+    if ($self->{$bound} and $self->{$bound} ne 'now') {
+      my @time = ($self->{$bound} =~ $time_regex);
+      @time && _valid_time(@time)
+        or croak "invalid time ($bound): $self->{$bound}";
+      $self->{$bound} = \@time;
+    }
+  }
+
+  # check order of boundaries
+  if ($self->{-min} and $self->{-max} and 
+        _time_cmp($self->{-min}, $self->{-max}) > 0) {
+    croak "Time: incoherent min/max values";
+  }
+
+  return $self;
 }
 
 
@@ -569,8 +650,10 @@ sub new {
   my $class = shift;
   my @options = qw/-values/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -values => 'arrayref');
-  eval {@{$self->{-values}}} or croak "Enum is empty";
   bless $self, $class;
+
+  eval {@{$self->{-values}}} or croak "Enum : incorrect set of values";
+  return $self;
 }
 
 
@@ -595,21 +678,27 @@ our @ISA = 'Data::Domain';
 
 sub new {
   my $class = shift;
-  my @options = qw/-items -min_size -max_size -any -all/;
+  my @options = qw/-items -size -min_size -max_size -any -all/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -items => 'arrayref');
+  bless $self, $class;
+
+  $self->_check_range(qw/-size -min_size -max_size/);
+
   croak "can't have both -all and -any" 
     if $self->{-all} and $self->{-any};
 
   if ($self->{-items}) {
-    ref($self->{-items}) eq 'ARRAY' 
+    UNIVERSAL::isa($self->{-items}, 'ARRAY')
       or croak "invalid -items for Data::Domain::List";
-    croak "-min_size does not match -items"
-      if $self->{-min_size} and $self->{-min_size} < @{$self->{-items}};
 
-#    $self->{-min_size} ||= @{$self->{-items}};
+    # if -items is given, then both -{min,max}_size cannot be shorter
+    for my $bound (qw/-min_size -max_size/) {
+      croak "$bound does not match -items"
+      if $self->{$bound} and $self->{$bound} < @{$self->{-items}};
+    }
   }
 
-  bless $self, $class;
+  return $self;
 }
 
 
@@ -626,7 +715,6 @@ sub _inspect {
   if (defined $self->{-max_size} && @$data > $self->{-max_size}) {
     return $self->msg(TOO_LONG => $self->{-max_size});
   }
-
 
   return unless $self->{-items} || $self->{-all} || $self->{-any};
 
@@ -676,6 +764,7 @@ sub new {
   my $class = shift;
   my @options = qw/-fields -exclude/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -fields => 'arrayref');
+  bless $self, $class;
 
   my $fields = $self->{-fields} || [];
   for (ref $fields) {
@@ -705,7 +794,7 @@ sub new {
   croak "invalid data for -exclude option" 
     if $self->{-exclude} and ref($self->{-exclude}) !~ /^(ARRAY|Regexp|)$/;
 
-  bless $self, $class;
+  return $self;
 }
 
 
@@ -768,9 +857,12 @@ sub new {
   my $class = shift;
   my @options = qw/-options/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -options => 'arrayref');
+  bless $self, $class;
+
   $self->{-options} and ref($self->{-options}) eq 'ARRAY'
     or croak "One_of: invalid options";
-  bless $self, $class;
+
+  return $self;
 }
 
 
@@ -785,9 +877,6 @@ sub _inspect {
   }
   return \@msgs;
 }
-
-
-
 
 
 #======================================================================
@@ -823,30 +912,32 @@ Data::Domain - Data description and validation
 =head1 DESCRIPTION
 
 A data domain is a description of a set of values, either
-scalar, or, more interestingly, structured values (arrays or hashes).
+scalar or structured (arrays or hashes).
 The description can include many constraints, like minimal or maximal
 values, regular expressions, required fields, forbidden fields, and
 also contextual dependencies. From that description, one can then
-check if a given value belongs to the domain. In case of mismatch,
-a structured set of error messages is returned.
+invoke the domain's C<inspect> method to check if a given value belongs 
+to it or not. In case of mismatch, a structured set of error messages is returned.
 
 The motivation for writing this package was to be able to express in a
 compact way some possibly complex constraints about structured
-data. The data is a Perl tree (nested hashrefs or arrayrefs) that may
-come from XML, L<JSON|JSON>, from a database through
-L<DBIx::DataModel|DBIx::DataModel>, or from postprocessing an HTML form
-through L<CGI::Expand|CGI::Expand>. C<Data::Domain> is a kind of tree
-parser on that structure, with some facilities for dealing
-with dependencies within the structure through lazy 
-evaluation of domains. Other packages doing data validation are
-briefly listed in the L</"SEE ALSO"> section. 
+data. Typically the data is a Perl tree (nested hashrefs or arrayrefs)
+that may come from XML, L<JSON|JSON>, from a database through
+L<DBIx::DataModel|DBIx::DataModel>, or from postprocessing an HTML
+form through L<CGI::Expand|CGI::Expand>. C<Data::Domain> is a kind of
+tree parser on that structure, with some facilities for dealing with
+dependencies within the structure through lazy evaluation of domains.
 
-B<DISCLAIMER : this code is still in design exploration phase; 
-  some parts of the API may change in future versions>.
+There are several other packages in CPAN doing data validation; these
+briefly listed in the L</"SEE ALSO"> section.
 
-=head1 FUNCTIONS
+B<DISCLAIMER> : this code is still in design exploration phase; 
+  some parts of the API may change in future versions.
 
-=head2 Shortcuts for domain constructors
+
+=head1 GLOBAL API
+
+=head2 Shortcut functions for domain constructors
 
 Internally, domains are represented as Perl objects; however, it would
 be tedious to write
@@ -869,26 +960,17 @@ then you can write more conveniently :
     ...
   );
 
-Function names like C<Int> or C<String> are convenient, but also quite
-common and therefore may cause name clashes with other modules.  In
-such cases, don't import the function names, and explicitly call the
-<new> method on domain constructors -- or write your own wrappers
+Short function names like C<Int> or C<String> are convenient, but 
+may cause name clashes with other modules.  If conflicts happen,
+don't import the function names, and explicitly call the
+C<new> method on domain constructors -- or write your own wrappers
 around them.
 
-=head2 node_from_path
-
-  my $node = node_from_path($root, @path);
-
-Convenience function to find a given node in a data tree, starting
-from the root and following a I<path> (a sequence of hash keys or
-array indices). Returns C<undef> if no such path exists in the tree.
-Mainly useful for contextual constraints in lazy constructors
-(see below).
 
 
-=head1 METHODS
+=head2 Methods
 
-=head2 new
+=head3 new
 
 Creates a new domain object, from one of the domain constructors
 listed below (C<Num>, C<Int>, C<Date>, etc.). 
@@ -907,11 +989,6 @@ below. However, there are also some generic options :
 if true, an <undef> value will be accepted, without generating an
 error message
 
-=item C<-default>
-
-defines a default value for the domain, that can then be retrieved
-by client code, for example for pre-filling a form
-
 =item C<-name>
 
 defines a name for the domain, that will be printed in error
@@ -919,7 +996,9 @@ messages instead of the subclass name.
 
 =item C<-messages>
 
-defines how error messages will be generated
+defines ad hoc messages for that domain, instead of the builtin
+messages. The argument can be either a string or a hashref,
+as explained in the  L</"ERROR MESSAGES"> section.
 
 
 =back
@@ -936,7 +1015,7 @@ is equivalent to
    my $domain = List(-items => [Int, String, Int]);
 
 
-=head2 inspect
+=head3 inspect
 
   my $messages = $domain->inspect($some_data);
 
@@ -959,39 +1038,6 @@ error messages to appropriate locations (typically these
 will be the form fields that gathered the data).
 
 
-=head2 msg
-
-Internal utility function for generating an error message.
-
-=head2 subclass
-
-Returns the short name of the subclass of C<Data::Domain> (i.e.
-returns 'Int' for C<Data::Domain::Int>).
-
-
-=head2 messages
-
-Global setting to choose how error messages are generated. The argument
-
-  Data::Domain->messages('english');  # the default
-  Data::Domain->messages('français');
-  Data::Domain->messages($my_messages); 
-  Data::Domain->messages(sub {my ($msg_id, @args) = @_;
-                              return "you just got it wrong"});
-
-Global setting to choose how error messages are generated. The argument
-is either the name of a builtin language (right now, only english and french),
-or a hashref with your own messages, or a reference to your own 
-message handling function.
-
-If supplying your own messages, you should pass a two-level hashref:
-first-level entries in the hash correspond to C<Data::Domain> subclasses
-(i.e C<< Num => {...} >>, C<< String => {...} >>); for each of 
-those, the second-level entries should correspond
-to message identifiers as specified in the doc for each subclass
-(for example C<TOO_SHORT>, C<NOT_A_HASH>, etc.).
-Values should be strings suitable to be fed to L<sprintf>.
-
 
 
 =head1 BUILTIN DOMAIN CONSTRUCTORS
@@ -1008,9 +1054,8 @@ Values should be strings suitable to be fed to L<sprintf>.
     has_methods   => Whatever(-can => [qw/jump swim dance sing/]),
   );
 
-Encapsulates just any kind of Perl value. 
-
-=head3 Options
+Encapsulates just any kind of Perl value (including C<undef>). 
+Options are : 
 
 =over
 
@@ -1033,19 +1078,12 @@ as an arrayref (several methods) or as a scalar (just one method).
 
 =back
 
-=head3 Error messages
-
-In case of failure, the domain returns one of the following scalar
-messages : C<MATCH_DEFINED>, C<MATCH_TRUE>, C<MATCH_ISA>, C<MATCH_CAN>.
-
 
 =head2 Num
 
-  my $domain = Num(-min => -3.33, -max => 999, -not_in => [2, 3, 5, 7, 11]);
+  my $domain = Num(-range =>[-3.33, 999], -not_in => [2, 3, 5, 7, 11]);
 
-Domain for numbers (including floats).
-
-=head3 Options
+Domain for numbers (including floats). Options are :
 
 =over
 
@@ -1057,6 +1095,11 @@ The data must be greater or equal to the supplied value.
 
 The data must be smaller or equal to the supplied value.
 
+=item -range
+
+C<< -range => [$min, $max] >> is equivalent to 
+C<< -min => $min, -max => $max >>.
+
 =item -not_in
 
 The data must be different from all values in the exclusion set,
@@ -1064,11 +1107,6 @@ supplied as an arrayref.
 
 =back
 
-
-=head3 Error messages
-
-In case of failure, the domain returns one of the following scalar
-messages : C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>, C<EXCLUSION_SET>.
 
 
 
@@ -1106,10 +1144,6 @@ according to L<Date::Calc|Date::Calc>'s current language (english
 by default); see that module's documentation for changing 
 the language.
 
-
-
-=head3 Options
-
 In the options below, the special keywords C<today>, 
 C<yesterday> or C<tomorrow> may be used instead of a date
 constant, and will be replaced by the appropriate date
@@ -1125,6 +1159,11 @@ The data must be greater or equal to the supplied value.
 
 The data must be smaller or equal to the supplied value.
 
+=item -range
+
+C<< -range => [$min, $max] >> is equivalent to 
+C<< -min => $min, -max => $max >>.
+
 =item -not_in
 
 The data must be different from all values in the exclusion set,
@@ -1133,21 +1172,12 @@ supplied as an arrayref.
 =back
 
 
-=head3 Error messages
-
-In case of failure, the domain returns one of the following scalar
-messages : C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>, C<EXCLUSION_SET>.
-
-
 
 =head2 Time
 
   my $domain = Time(-min => '08:00', -max => 'now');
 
 Domain for times in format C<hh:mm:ss> (minutes and seconds are optional).
-
-
-=head3 Options
 
 In the options below, the special keyword C<now> may be used instead of a 
 time, and will be replaced by the current local time
@@ -1163,13 +1193,13 @@ The data must be greater or equal to the supplied value.
 
 The data must be smaller or equal to the supplied value.
 
+=item -range
+
+C<< -range => [$min, $max] >> is equivalent to 
+C<< -min => $min, -max => $max >>.
+
 =back
 
-
-=head3 Error messages
-
-In case of failure, the domain returns one of the following scalar
-messages : C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>.
 
 
 =head2 String
@@ -1178,13 +1208,11 @@ messages : C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>.
 
   my $domain = String(-regex     => qr/^[A-Za-z0-9_\s]+$/,
                       -antiregex => qr/$RE{profanity}/,    # see Regexp::Common
-                      -min       => 'AA',
-                      -max       => 'zz',
+                      -range     => ['AA', 'zz'],
+                      -length    => [1, 20],
                       -not_in    => [qw/foo bar/]);
 
-Domain for strings.
-
-=head3 Options
+Domain for strings. Options are:
 
 
 =over
@@ -1210,6 +1238,25 @@ The data must be greater or equal to the supplied value.
 
 The data must be smaller or equal to the supplied value.
 
+=item -range
+
+C<< -range => [$min, $max] >> is equivalent to 
+C<< -min => $min, -max => $max >>.
+
+=item -min_length
+
+The string length must be greater or equal to the supplied value.
+
+=item -max_length
+
+The string length must be smaller or equal to the supplied value.
+
+=item -length
+
+C<< -length => [$min, $max] >> is equivalent to 
+C<< -min_length => $min, -max_length => $max >>.
+
+
 =item -not_in
 
 The data must be different from all values in the exclusion set,
@@ -1218,21 +1265,14 @@ supplied as an arrayref.
 =back
 
 
-=head3 Error messages
-
-In case of failure, the domain returns one of the following scalar
-messages : C<TOO_SHORT>, C<TOO_LONG>, C<TOO_SMALL>, C<TOO_BIG>,
-C<EXCLUSION_SET>, C<SHOULD_MATCH>, C<SHOULD_NOT_MATCH>.
-
-
 
 =head2 Enum
 
   my $domain = Enum(qw/foo bar buz/);
 
 Domain for a finite set of scalar values.
+Options are:
 
-=head3 Options
 
 =over
 
@@ -1245,10 +1285,6 @@ simply written as C<< Enum(qw/foo bar buz/) >>.
 
 =back
 
-=head3 Error messages
-
-In case of failure, the domain returns the following scalar
-message : C<NOT_IN_LIST>.
 
 
 =head2 List
@@ -1258,13 +1294,11 @@ message : C<NOT_IN_LIST>.
   my $domain = List(-items => [String, Int, String, Num]); # same as above
 
   my $domain = List(-all      => Int(qr/^[A-Z]+$/),
-                    -min_size => 3,
-                    -max_size => 10);
+                    -size => [3, 10]);
 
 
 Domain for lists of values (stored as Perl arrayrefs).
-
-=head3 Options
+Options are:
 
 =over
 
@@ -1284,6 +1318,12 @@ The data must be a ref to an array with at least that number of entries.
 
 The data must be a ref to an array with at most that number of entries.
 
+=item -size
+
+C<< -size => [$min, $max] >> is equivalent to 
+C<< -min_size => $min, -max_size => $max >>.
+
+
 =item -all
 
 All remaining entries in the array, after the first <n> entries
@@ -1300,16 +1340,6 @@ Option C<-any> is incompatible with option C<-all>.
 
 =back
 
-=head3 Error messages
-
-The domain will first check if the supplied array is of appropriate
-shape; in case of of failure, it will return of the following scalar
-messages :  C<NOT_A_LIST>, c<TOO_SHORT>, C<TOO_LONG>.
-
-Then it will check all items in the supplied array according to 
-the C<-items>, C<-all> or C<-any> specifications, and return an
-arrayref of messages, where message positions correspond to the
-positions of offending data items.
 
 
 =head2 Struct
@@ -1320,8 +1350,7 @@ positions of offending data items.
                       -exclude => '*');
 
 Domain for associative structures (stored as Perl hashrefs).
-
-=head3 Options
+Options are:
 
 =over
 
@@ -1346,17 +1375,6 @@ C<-fields> option.
 
 
 
-=head3 Error messages
-
-The domain will first check if the supplied hash is of appropriate
-shape; in case of of failure, it will return of the following scalar
-messages :  C<NOT_A_HASH>, c<FORBIDDEN_FIELD>.
-
-Then it will check all entries in the supplied hash according to 
-the C<-fields> specification, and return a
-hashref of messages, where keys correspond to the
-keys of offending data items.
-
 
 =head2 One_of
 
@@ -1364,8 +1382,8 @@ keys of offending data items.
 
 Union of domains : successively checks the member domains,
 until one of them succeeds. 
+Options are:
 
-=head3 Options
 
 =over
 
@@ -1375,13 +1393,6 @@ List of domains to be checked. This is the default option, so
 the keyword may be omitted.
 
 =back
-
-=head3 Error messages
-
-If all member domains failed to accept the data, an arrayref
-or error messages is returned, where the order of messages
-corresponds to the order of the checked domains.
-
 
 
 
@@ -1513,14 +1524,217 @@ C<Data::Domain::String> for short examples.
 
 However, before writing such a class, consider whether the existing
 mechanisms are not enough for your needs. For example, many
-domains could be expressed as a C<String> with a regular expression:
+domains could be expressed as a C<String> with a regular expression;
+therefore it is just a matter of writing a wrapper that supplies
+that regular expression, and passes other arguments (like C<-optional>)
+to the C<String> constructor :
 
-  my $Email_dom   = String(qr/^[-.\w]+\@[\w.]+$/); 
-  my $Phone_dom   = String(qr/^\+?[0-9() ]+$/); 
-  my $Contact_dom = Struct(name   => String,
-                           phone  => $Phone_dom,
-                           mobile => $Phone_dom,
-                           emails => List(-all => $Email_dom));
+  sub Phone   { String(-regex    => qr/^\+?[0-9() ]+$/, 
+                       -messages => "Invalid phone number", @_) }
+  sub Email   { String(-regex    => qr/^[-.\w]+\@[\w.]+$/,
+                       -messages => "Invalid email", @_) }
+  sub Contact { Struct(-fields => [name   => String,
+                                   phone  => Phone,
+                                   mobile => Phone(-optional => 1),
+                                   emails => List(-all => Email)   ], @_) }
+
+
+=head1 ERROR MESSAGES
+
+Messages returned by validation rules have default values, 
+but can be customized in several ways.
+
+Each error message has an internal string identifier, like
+C<TOO_SHORT>, C<NOT_A_HASH>, etc. The documentation for each builtin
+domain tells which message identifiers may be generated in that
+domain.  Message identifiers are then associated with user-friendly
+strings, either within the domain itself, or via a global table.
+Such strings are actually a L<sprintf|perlfunc/sprintf>
+format strings, with placeholders for printing some specific
+details about the validation rule : for example the C<String>
+domain defines default messages such as 
+
+      TOO_SHORT        => "less than %d characters",
+      SHOULD_MATCH     => "should match %s",
+
+=head2 The C<-messages> option to domain constructors
+
+Any domain constructor may receive a 
+C<-messages> option to locally override the 
+messages for that domain. The argument may be
+
+=over
+
+=item *
+
+a plain string : that string will be returned for any kind of 
+validation error within the domain
+
+=item *
+
+a hashref : keys of the hash should be message identifiers, and
+values should be the associated error strings.
+
+=item *
+
+a coderef : the referenced function is called, and the return
+value becomes the error string. The called function receives
+the message identifier as argument.
+
+=back
+
+Here is an example :
+
+ sub Phone { 
+   String(-regex      => qr/^\+?[0-9() ]+$/, 
+          -min_length => 7,
+          -messages   => {
+            TOO_SHORT    => "phone number should have at least %d digits",
+            SHOULD_MATCH => "invalid chars in phone number"
+           }, @_) 
+ }
+
+
+
+
+=head2 The C<messages> class method
+
+Default strings associated with message identifiers are stored in a
+global table. The distribution contains builtin tables for english
+(the default) and for french : these can be chosen through the
+C<messages> class method :
+
+  Data::Domain->messages('english');  # the default
+  Data::Domain->messages('français');
+
+The same method can also receive  a custom table.
+
+  my $custom_table = {...}; # see 
+  Data::Domain->messages($custom_table);
+
+This should be a two-level hashref : first-level entries in the hash
+correspond to C<Data::Domain> subclasses (i.e C<< Num => {...} >>, C<<
+String => {...} >>), or to the constant C<Generic>; for each of those,
+the second-level entries should correspond to message identifiers as
+specified in the doc for each subclass (for example C<TOO_SHORT>,
+C<NOT_A_HASH>, etc.).  Values should be strings suitable to be fed to
+L<sprintf>.  Look at C<$builtin_msgs> in the source code to see an
+example.
+
+Finally, it is also possible to write your own message generation 
+handler : 
+
+  Data::Domain->messages(sub {my ($msg_id, @args) = @_;
+                              return "you just got it wrong ($msg_id)"});
+
+What is received in 
+C<@args> depends on which validation rule is involved;
+it can be for example the minimal or maximal bounds,
+or the regular expression being checked.
+
+=head2 The C<-name> option to domain constructors
+
+The name of the domain is prepended in front of error 
+messages. The default name is the subclass of C<Data::Domain>, 
+so a typical error message for a string would be 
+
+  String: less than 7 characters
+
+However, if a C<-name> is supplied to the domain constructor,
+that name will be printed instead;
+
+  my $dom = String(-min_length => 7, -name => 'Phone');
+  # now error would be: "Phone: less than 7 characters"
+
+
+=head2 Message identifiers
+
+This section lists all possible message identifiers generated
+by the builtin constructors.
+
+=over
+
+=item C<Whatever>
+
+C<MATCH_DEFINED>, C<MATCH_TRUE>, C<MATCH_ISA>, C<MATCH_CAN>.
+
+=item C<Num>
+
+C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>, C<EXCLUSION_SET>.
+
+=item C<Date>
+
+C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>, C<EXCLUSION_SET>.
+
+
+=item C<Time>
+
+C<INVALID>, C<TOO_SMALL>, C<TOO_BIG>.
+
+
+=item C<String>
+
+C<TOO_SHORT>, C<TOO_LONG>, C<TOO_SMALL>, C<TOO_BIG>,
+C<EXCLUSION_SET>, C<SHOULD_MATCH>, C<SHOULD_NOT_MATCH>.
+
+=item C<Enum>
+
+C<NOT_IN_LIST>.
+
+=item C<List>
+
+The domain will first check if the supplied array is of appropriate
+shape; in case of of failure, it will return of the following scalar
+messages :  C<NOT_A_LIST>, c<TOO_SHORT>, C<TOO_LONG>.
+
+Then it will check all items in the supplied array according to 
+the C<-items>, C<-all> or C<-any> specifications, and return an
+arrayref of messages, where message positions correspond to the
+positions of offending data items.
+
+
+=item C<Struct>
+
+The domain will first check if the supplied hash is of appropriate
+shape; in case of of failure, it will return of the following scalar
+messages :  C<NOT_A_HASH>, c<FORBIDDEN_FIELD>.
+
+Then it will check all entries in the supplied hash according to 
+the C<-fields> specification, and return a
+hashref of messages, where keys correspond to the
+keys of offending data items.
+
+=item C<One_of>
+
+If all member domains failed to accept the data, an arrayref
+or error messages is returned, where the order of messages
+corresponds to the order of the checked domains.
+
+
+=back
+
+
+
+=head1 INTERNALS
+
+=head2 node_from_path
+
+  my $node = node_from_path($root, @path);
+
+Convenience function to find a given node in a data tree, starting
+from the root and following a I<path> (a sequence of hash keys or
+array indices). Returns C<undef> if no such path exists in the tree.
+Mainly useful for contextual constraints in lazy constructors
+(see below).
+
+=head2 msg
+
+Internal utility method for generating an error message.
+
+=head2 subclass
+
+Method that returns the short name of the subclass of C<Data::Domain> (i.e.
+returns 'Int' for C<Data::Domain::Int>).
 
 
 =head1 SEE ALSO
@@ -1549,6 +1763,7 @@ information about neighbour nodes.
 =head1 TODO
 
   - generate javascript validation code
+  - generate XML schema
   - normalization / conversions (-filter option)
   - msg callbacks (-filter_msg option)
   - default values within domains ? (good idea ?)
