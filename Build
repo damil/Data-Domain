@@ -11,7 +11,7 @@ sub magic_number_matches {
   open FH, '_build\\magicnum' or return 0;
   my $filenum = <FH>;
   close FH;
-  return $filenum == 982299;
+  return $filenum == 547943;
 }
 
 my $progname;
@@ -20,7 +20,7 @@ BEGIN {
   $^W = 1;  # Use warnings
   $progname = basename($0);
   $orig_dir = Cwd::cwd();
-  my $base_dir = 'D:\\DEVAREA\\REPO_C~1\\TRUNK\\DATA-D~1';
+  my $base_dir = 'C:\\SVN\\CPAN\\TRUNK\\DATA-D~1';
   if (!magic_number_matches()) {
     unless (chdir($base_dir)) {
       die ("Couldn't chdir($base_dir), aborting\n");
@@ -31,7 +31,8 @@ BEGIN {
   }
   unshift @INC,
     (
-
+     'C:\\Program Files\\XEmTeX\\perl\\lib',
+     'C:\\Program Files\\XEmTeX\\perl\\site\\lib'
     );
 }
 
