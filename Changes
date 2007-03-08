@@ -1,6 +1,10 @@
 Revision history for Data-Domain
 
-0.02    23.02.2006
+0.04    07.03.2006
+  - Fixed dependencies in Build.PL
+  - Revisited code for List(-any) 
+
+0.03    23.02.2006
   - Bug fix in method msgs()
 
 0.02    27.12.2006

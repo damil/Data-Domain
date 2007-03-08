@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.03";
+our $VERSION = "0.04";
 
 my @builtin_domains = qw/Whatever
                          Num Int Date Time String
@@ -55,6 +55,7 @@ my $builtin_msgs = {
       NOT_A_LIST => "is not an arrayref",
       TOO_SHORT  => "less than %d items",
       TOO_LONG   => "more than %d items",
+      ANY        => "should have at least one %s",
     },
     Struct => {
       NOT_A_HASH      => "is not a hashref",
@@ -89,6 +90,7 @@ my $builtin_msgs = {
       NOT_A_LIST => "n'est pas une arrayref",
       TOO_SHORT  => "moins de %d éléments",
       TOO_LONG   => "plus de %d éléments",
+      ANY        => "doit avoir au moins un %s",
     },
     Struct => {
       NOT_A_HASH      => "n'est pas une hashref",
@@ -173,7 +175,6 @@ sub subclass {
   (my $subclass = $class) =~ s/^Data::Domain:://;
   return $subclass;
 }
-
 
 
 sub _check_range {
@@ -684,9 +685,6 @@ sub new {
 
   $self->_check_range(qw/-size -min_size -max_size/);
 
-  croak "can't have both -all and -any" 
-    if $self->{-all} and $self->{-any};
-
   if ($self->{-items}) {
     UNIVERSAL::isa($self->{-items}, 'ARRAY')
       or croak "invalid -items for Data::Domain::List";
@@ -725,13 +723,14 @@ sub _inspect {
 
   local $context->{list} = $data;
   my @msgs;
-  my ($has_invalid, $has_good_item);
-  my $items = $self->{-items} || [];
-  my $n_checks = max(scalar(@$data), scalar(@$items));
+  my $has_invalid;
 
-  for (my $i = 0; $i < $n_checks; $i++) {
-    my $subdomain = $items->[$i] || $self->{-all} || $self->{-any}
-      or next;
+  my $items   = $self->{-items} || [];
+  my $n_items = @$items;
+  my $n_data  = @$data;
+
+  for (my $i = 0; $i < $n_items; $i++) {
+    my $subdomain = $items->[$i] or next;
     local $context->{path} = [@{$context->{path}}, $i];
 
     # if lazy domain, call it
@@ -739,12 +738,40 @@ sub _inspect {
       if UNIVERSAL::isa($subdomain, 'CODE');
 
     $msgs[$i] = $subdomain->inspect($data->[$i], $context);
-    $has_invalid   ||=   $msgs[$i];
-    $has_good_item ||= ! $msgs[$i];
+    $has_invalid ||= $msgs[$i];
   }
 
-  return \@msgs if ($has_invalid    and $self->{-items} || $self->{-all}) 
-                or (!$has_good_item and $self->{-any});
+  if ($self->{-all}) {
+    for (my $i = $n_items; $i < $n_data; $i++) {
+      my $subdomain = $self->{-all};
+      local $context->{path} = [@{$context->{path}}, $i];
+      # if lazy domain, call it
+      $subdomain = $subdomain->($context) 
+        if UNIVERSAL::isa($subdomain, 'CODE');
+
+      $msgs[$i] = $subdomain->inspect($data->[$i], $context);
+      $has_invalid ||= $msgs[$i];
+    }
+  }
+
+  return \@msgs if $has_invalid; 
+
+  # all other conditions were good, now check the "any" conditions
+
+  my @anys = UNIVERSAL::isa($self->{-any}, 'ARRAY') ? @{$self->{-any}} 
+               : $self->{-any} ? ($self->{-any}) : ();
+
+ ANYS:
+  foreach my $any (@anys) {
+
+    for (my $i = $n_items; $i < $n_data; $i++) {
+      local $context->{path} = [@{$context->{path}}, $i];
+      my $subdomain = UNIVERSAL::isa($any, 'CODE') ? $any->($context) : $any;
+      my $error = $subdomain->inspect($data->[$i], $context);
+      next ANYS if not $error;
+    }
+    return $self->msg(ANY => ($self->{-name} || $self->subclass));
+  }
 
   return; # OK, no error
 }
@@ -929,7 +956,7 @@ tree parser on that structure, with some facilities for dealing with
 dependencies within the structure through lazy evaluation of domains.
 
 There are several other packages in CPAN doing data validation; these
-briefly listed in the L</"SEE ALSO"> section.
+are briefly listed in the L</"SEE ALSO"> section.
 
 B<DISCLAIMER> : this code is still in design exploration phase; 
   some parts of the API may change in future versions.
@@ -1293,7 +1320,8 @@ simply written as C<< Enum(qw/foo bar buz/) >>.
 
   my $domain = List(-items => [String, Int, String, Num]); # same as above
 
-  my $domain = List(-all      => Int(qr/^[A-Z]+$/),
+  my $domain = List(-all  => String(qr/^[A-Z]+$/),
+                    -any  => String(-min_length => 3),
                     -size => [3, 10]);
 
 
@@ -1334,12 +1362,24 @@ domain specification.
 
 At least one remaining entry in the array, after the first <n> entries
 as specified by the C<-items> option (if any), must satisfy that
-domain specification.
+domain specification. A list domain can have both an C<-all> and
+and C<-any> constraint.
 
-Option C<-any> is incompatible with option C<-all>.
+The argument to C<-any> can also be an arrayref of domains, as in
+
+   List(-any => [String(qr/^foo/), Num(-range => [1, 10]) ])
+
+This means that one member of the list must be a string
+starting with C<foo>, and one member of the list (in this case,
+necessarily another one) must be a number between 1 and 10.
+Note that this is different from 
+
+   List(-any => One_of(String(qr/^foo/), Num(-range => [1, 10]))
+
+which says that one member of the list must be I<either>
+a string starting with C<foo> I<or> a number between 1 and 10.
 
 =back
-
 
 
 =head2 Struct
@@ -1549,7 +1589,7 @@ C<TOO_SHORT>, C<NOT_A_HASH>, etc. The documentation for each builtin
 domain tells which message identifiers may be generated in that
 domain.  Message identifiers are then associated with user-friendly
 strings, either within the domain itself, or via a global table.
-Such strings are actually a L<sprintf|perlfunc/sprintf>
+Such strings are actually L<sprintf|perlfunc/sprintf>
 format strings, with placeholders for printing some specific
 details about the validation rule : for example the C<String>
 domain defines default messages such as 
@@ -1685,19 +1725,30 @@ C<NOT_IN_LIST>.
 
 The domain will first check if the supplied array is of appropriate
 shape; in case of of failure, it will return of the following scalar
-messages :  C<NOT_A_LIST>, c<TOO_SHORT>, C<TOO_LONG>.
+messages :  C<NOT_A_LIST>, C<TOO_SHORT>, C<TOO_LONG>.
 
 Then it will check all items in the supplied array according to 
-the C<-items>, C<-all> or C<-any> specifications, and return an
-arrayref of messages, where message positions correspond to the
-positions of offending data items.
+the C<-items> and C<-all> specifications; in case of failure,
+an arrayref of messages is returned, where message positions correspond 
+to the positions of offending data items.
+
+Finally, the domain will check the C<-any> constraint; in 
+case of failure, it returns an C<ANY> scalar message.
+Since that message contains the name of the missing domain,
+it is a good idea to use the C<-name> option so that the 
+message is easily comprehensible, as for example in 
+
+  List(-any => String(-name => "uppercase word", 
+                      -regex => qr/^[A-Z]$/))
+
+Here the error message would be : I<should have at least one uppercase word>.
 
 
 =item C<Struct>
 
 The domain will first check if the supplied hash is of appropriate
 shape; in case of of failure, it will return of the following scalar
-messages :  C<NOT_A_HASH>, c<FORBIDDEN_FIELD>.
+messages :  C<NOT_A_HASH>, C<FORBIDDEN_FIELD>.
 
 Then it will check all entries in the supplied hash according to 
 the C<-fields> specification, and return a
@@ -1770,11 +1821,11 @@ information about neighbour nodes.
 
 =head1 AUTHOR
 
-Laurent Dami, E<lt>laurent.dami AT etat  geneve  chE<gt>
+Laurent Dami, E<lt>laurent.d...@etat.geneve.chE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006 by Laurent Dami.
+Copyright 2006, 2007 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 

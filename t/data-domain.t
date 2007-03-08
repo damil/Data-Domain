@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 123;
+use Test::More tests => 130;
 use Data::Dumper;
 
 BEGIN {
@@ -194,6 +194,20 @@ $dom = List(-size => [2, 5], -any => Int);
 ok(!$dom->inspect([1, 2, 3]), "List ok");
 ok($dom->inspect([qw/foo bar buz/]), "List not any");
 ok(!$dom->inspect([qw/foo bar buz/, 3]), "List any");
+
+
+$dom = List(-items => [String, Num], 
+            -any => Int);
+ok($dom->inspect(['foo', 2]), "List + items not any");
+ok(!$dom->inspect(['foo', 2, 3]), "List + items any 1");
+ok(!$dom->inspect(['foo', 2, 'foo', 'bar', 3]), "List + items any 2");
+
+$dom = List(-items => [String, Num], 
+            -any => [String(qr/^foo/), Int(-range => [1, 10])]);
+ok($dom->inspect(['foo', 2, undef, 'foobar']), "List 2 anys nok 1");
+ok($dom->inspect(['foo', 2, 3, 'bar', 'bie']), "List 2 anys nok 2");
+ok(!$dom->inspect(['foo', 2, 3, 'foobar']), "List 2 anys ok 1");
+ok(!$dom->inspect(['foo', 2, undef, 3, 'foobar']), "List 2 anys ok 2");
 
 
 #----------------------------------------------------------------------
