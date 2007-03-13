@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+0.05    
+  - Bug fix : wrong message in List(-any)
+
 0.04    07.03.2006
   - Fixed dependencies in Build.PL
   - Revisited code for List(-any) 
