@@ -761,6 +761,11 @@ sub _inspect {
   my @anys = UNIVERSAL::isa($self->{-any}, 'ARRAY') ? @{$self->{-any}} 
                : $self->{-any} ? ($self->{-any}) : ();
 
+  # if there is an 'any' condition, there must be data to inspect
+  return $self->msg(ANY => ($anys[0]{-name} || $anys[0]->subclass))
+      if @anys and not $n_data > $n_items;
+
+  # inspect the remaining data for all 'any' conditions
  ANYS:
   foreach my $any (@anys) {
     my $subdomain;
