@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.05";
+our $VERSION = "0.07";
 
 my @builtin_domains = qw/Whatever
                          Num Int Date Time String
@@ -449,7 +449,8 @@ my $date_parser = \&Decode_Date_EU;
 #----------------------------------------------------------------------
 sub _print_date {
   my $date = shift;
-  return ref($date) ? Date_to_Text(@$date) : $date;
+  $date = _expand_dynamic_date($date);
+  return Date_to_Text(@$date);
 }
 
 
@@ -1450,7 +1451,7 @@ another element), then we need to I<lazily> construct the domain.
 Consider for example a struct in which the value of field C<date_end> 
 must be greater than C<date_begin> : 
 the subdomain for C<date_end> can only be constructed 
-when the argument to <-min> is known, namely when
+when the argument to C<-min> is known, namely when
 the domain inspects an actual data structure.
 
 Lazy domain construction is achieved by supplying a function reference
@@ -1476,9 +1477,9 @@ the overall root of the inspected data
 
 =item path
 
-the sequence of keys or array indices that led to the current 
+the sequence of keys or array indices that led to the current
 data node. With that information, the subdomain is able to jump
-to other ancestor or sibling data node within the tree, with 
+to other ancestor or sibling data nodes within the tree, with
 help of the L<node_from_path> function.
 
 =item flat
