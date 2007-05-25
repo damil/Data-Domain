@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+0.08
+  - changed messages in Time() to display real time for dynamic times
+
 0.07
   - changed messages in Date() to display real dates for dynamic dates
 
