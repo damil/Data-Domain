@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.08";
+our $VERSION = "0.09";
 
 my @builtin_domains = qw/Whatever
                          Num Int Date Time String
@@ -125,13 +125,12 @@ sub messages { # private class method
 sub inspect {
   my ($self, $data, $context) = @_;
 
+  # call _inspect() if data is defined or if builtin domains Whatever
   return $self->_inspect($data, $context)
-    if defined($data);
+    if defined($data) or $self->isa("Data::Domain::Whatever");
 
   # otherwise, if data is undefined
   return if $self->{-optional};                # optional domains always succeed
-  return $self->_inspect($data, $context)
-    if ref $self eq 'Data::Domain::Whatever';  # that one wants to check for himself
   return $self->msg(UNDEFINED => '');          # otherwise : error
 }
 
@@ -177,10 +176,11 @@ sub subclass {
 }
 
 
-sub _check_range {
+sub _expand_range {
   my ($self, $range_field, $min_field, $max_field, $ignore_check) = @_;
   my $name = $self->{-name} || $self->subclass;
 
+  # range field will be replaced by min and max fields
   if (my $range = delete $self->{$range_field}) {
     for ($min_field, $max_field) {
       not defined $self->{$_}
@@ -191,11 +191,24 @@ sub _check_range {
     @{$self}{$min_field, $max_field} = @$range;
   }
 
+  # check numeric order of min and max bounds (unless check is disabled)
   if (!$ignore_check and defined($self->{$min_field}) 
                      and defined($self->{$max_field})) {
     $self->{$min_field} <= $self->{$max_field}
       or croak "$name: incompatible min/max values";
   }
+}
+
+
+sub _call_lazy_domain {
+  my ($self, $domain, $context) = @_;
+
+  if (UNIVERSAL::isa($domain, 'CODE')) {
+    $domain = $domain->($context);
+    UNIVERSAL::isa($domain, "Data::Domain")
+        or croak "lazy domain coderef returned an invalid domain";
+    }
+  return $domain;
 }
 
 
@@ -249,7 +262,6 @@ sub node_from_path {
 
 
 
-
 #======================================================================
 package Data::Domain::Whatever;
 #======================================================================
@@ -272,6 +284,8 @@ sub new {
 
 sub _inspect {
   my ($self, $data) = @_;
+
+  return if $self->{-optional} and not defined($data);
 
   if (defined $self->{-defined}) {
     return $self->msg(MATCH_DEFINED => $self->{-defined})
@@ -312,7 +326,7 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options);
   bless $self, $class;
 
-  $self->_check_range(qw/-range -min -max/);
+  $self->_expand_range(qw/-range -min -max/);
 
   if ($self->{-not_in}) {
     eval {my $vals = $self->{-not_in};
@@ -380,13 +394,13 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options, -regex => 'scalar');
   bless $self, $class;
 
-  $self->_check_range(qw/-range -min -max don_t_check_order/);
+  $self->_expand_range(qw/-range -min -max don_t_check_order/);
   if ($self->{-min} and $self->{-max} and
         $self->{-min} gt $self->{-max}) {
     croak "String: incompatible min/max values";
   }
 
-  $self->_check_range(qw/-length -min_length -max_length/);
+  $self->_expand_range(qw/-length -min_length -max_length/);
 
   return $self;
 }
@@ -498,7 +512,7 @@ sub new {
   my $self    = Data::Domain::_parse_args(\@_, \@options);
   bless $self, $class;
 
-  $self->_check_range(qw/-range -min -max don_t_check_order/);
+  $self->_expand_range(qw/-range -min -max don_t_check_order/);
 
   # parse date boundaries into internal representation (arrayrefs)
   for my $bound (qw/-min -max/) {
@@ -602,7 +616,7 @@ sub _time_cmp {
 
 sub _print_time {
   my $time = _expand_dynamic_time(shift);
-  return sprintf "%02d:%02d:%02d", @$time;
+  return sprintf "%02d:%02d:%02d", $time->[0], $time->[1]||0, $time->[2]||0;
 }
 
 
@@ -612,7 +626,7 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options);
   bless $self, $class;
 
-  $self->_check_range(qw/-range -min -max don_t_check_order/);
+  $self->_expand_range(qw/-range -min -max don_t_check_order/);
 
   # parse time boundaries
   for my $bound (qw/-min -max/) {
@@ -700,7 +714,7 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options, -items => 'arrayref');
   bless $self, $class;
 
-  $self->_check_range(qw/-size -min_size -max_size/);
+  $self->_expand_range(qw/-size -min_size -max_size/);
 
   if ($self->{-items}) {
     UNIVERSAL::isa($self->{-items}, 'ARRAY')
@@ -747,26 +761,18 @@ sub _inspect {
   my $n_data  = @$data;
 
   for (my $i = 0; $i < $n_items; $i++) {
-    my $subdomain = $items->[$i] or next;
     local $context->{path} = [@{$context->{path}}, $i];
-
-    # if lazy domain, call it
-    $subdomain = $subdomain->($context) 
-      if UNIVERSAL::isa($subdomain, 'CODE');
-
-    $msgs[$i] = $subdomain->inspect($data->[$i], $context);
+    my $subdomain  = $self->_call_lazy_domain($items->[$i], $context)
+      or next;
+    $msgs[$i]      = $subdomain->inspect($data->[$i], $context);
     $has_invalid ||= $msgs[$i];
   }
 
   if ($self->{-all}) {
     for (my $i = $n_items; $i < $n_data; $i++) {
-      my $subdomain = $self->{-all};
       local $context->{path} = [@{$context->{path}}, $i];
-      # if lazy domain, call it
-      $subdomain = $subdomain->($context) 
-        if UNIVERSAL::isa($subdomain, 'CODE');
-
-      $msgs[$i] = $subdomain->inspect($data->[$i], $context);
+      my $subdomain  = $self->_call_lazy_domain($self->{-all}, $context);
+      $msgs[$i]      = $subdomain->inspect($data->[$i], $context);
       $has_invalid ||= $msgs[$i];
     }
   }
@@ -788,8 +794,8 @@ sub _inspect {
     my $subdomain;
     for (my $i = $n_items; $i < $n_data; $i++) {
       local $context->{path} = [@{$context->{path}}, $i];
-      $subdomain = UNIVERSAL::isa($any, 'CODE') ? $any->($context) : $any;
-      my $error = $subdomain->inspect($data->[$i], $context);
+         $subdomain = $self->_call_lazy_domain($any, $context);
+      my $error     = $subdomain->inspect($data->[$i], $context);
       next ANYS if not $error;
     }
     return $self->msg(ANY => ($subdomain->{-name} || $subdomain->subclass));
@@ -879,15 +885,11 @@ sub _inspect {
 
   # check fields of the domain
   foreach my $field (@{$self->{-fields_list}}) {
-    my $subdomain = $self->{-fields}{$field};
     local $context->{path} = [@{$context->{path}}, $field];
-
-    # if lazy domain, call it
-    $subdomain = $subdomain->($context)
-      if UNIVERSAL::isa($subdomain, 'CODE');
-
-    my $msg = $subdomain->inspect($data->{$field}, $context);
-    $msgs{$field} = $msg if $msg;
+    my $field_spec = $self->{-fields}{$field};
+    my $subdomain  = $self->_call_lazy_domain($field_spec, $context);
+    my $msg        = $subdomain->inspect($data->{$field}, $context);
+    $msgs{$field}  = $msg if $msg;
     $has_invalid ||=  $msg;
   }
 
@@ -975,13 +977,11 @@ that may come from XML, L<JSON|JSON>, from a database through
 L<DBIx::DataModel|DBIx::DataModel>, or from postprocessing an HTML
 form through L<CGI::Expand|CGI::Expand>. C<Data::Domain> is a kind of
 tree parser on that structure, with some facilities for dealing with
-dependencies within the structure through lazy evaluation of domains.
+dependencies within the structure, and with several options to 
+finely tune the error messages returned to the user.
 
 There are several other packages in CPAN doing data validation; these
 are briefly listed in the L</"SEE ALSO"> section.
-
-B<DISCLAIMER> : this code is still in design exploration phase; 
-  some parts of the API may change in future versions.
 
 
 =head1 GLOBAL API
@@ -1035,7 +1035,7 @@ below. However, there are also some generic options :
 
 =item C<-optional>
 
-if true, an <undef> value will be accepted, without generating an
+if true, an C<undef> value will be accepted, without generating an
 error message
 
 =item C<-name>
@@ -1046,7 +1046,7 @@ messages instead of the subclass name.
 =item C<-messages>
 
 defines ad hoc messages for that domain, instead of the builtin
-messages. The argument can be either a string or a hashref,
+messages. The argument can be a string, a hashref or a coderef,
 as explained in the  L</"ERROR MESSAGES"> section.
 
 
@@ -1054,8 +1054,8 @@ as explained in the  L</"ERROR MESSAGES"> section.
 
 Option names always start with a dash. If no option name is given,
 parameters to the C<new> method are passed to the I<default option>,
-which differs according to the constructor subclass. For example
-the default option in  C<List> is C<-items>, so 
+as defined in each constructor subclass. For example
+the default option in  C<Data::Domain::List> is C<-items>, so 
 
    my $domain = List(Int, String, Int);
 
@@ -1075,7 +1075,7 @@ is returned.
 
 For scalar domains (C<Num>, C<String>, etc.), the error message
 is just a string. For structured domains (C<List>, C<Struct>),
-the return value is a corresponding arrayref or hashref, like
+the return value is an arrayref or hashref of the same structure, like
 for example
 
   {anInt => "smaller than mimimum 3",
@@ -1382,7 +1382,7 @@ domain specification.
 
 =item -any
 
-At least one remaining entry in the array, after the first <n> entries
+At least one remaining entry in the array, after the first I<n> entries
 as specified by the C<-items> option (if any), must satisfy that
 domain specification. A list domain can have both an C<-all> and
 and C<-any> constraint.
@@ -1419,9 +1419,10 @@ Options are:
 =item -fields
 
 Supplies a list of keys with their associated domains. The list might
-be given either as a hashref or as an arrayref (in which case the the
-order of individual field checks will follow the order in the array).
-The ordering may make a difference in case of context dependencies (see 
+be given either as a hashref or as an arrayref. 
+Specifying it as an arrayref is useful for controlling 
+the order in which field checks will be performed;
+this may make a difference when there are context dependencies (see 
 L<"LAZY CONSTRUCTORS"|/"LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)"> below ).
 
 
@@ -1458,12 +1459,13 @@ the keyword may be omitted.
 
 
 
+
 =head1 LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)
 
 =head2 Principle
 
-If an element of a structured domain (C<List> or C<Struct> depends on 
-another element), then we need to I<lazily> construct the domain.
+If an element of a structured domain (C<List> or C<Struct>) depends on 
+another element, then we need to I<lazily> construct the domain.
 Consider for example a struct in which the value of field C<date_end> 
 must be greater than C<date_begin> : 
 the subdomain for C<date_end> can only be constructed 
@@ -1585,11 +1587,11 @@ an C<_inspect> method. See the source code of C<Data::Domain::Num> or
 C<Data::Domain::String> for short examples.
 
 However, before writing such a class, consider whether the existing
-mechanisms are not enough for your needs. For example, many
-domains could be expressed as a C<String> with a regular expression;
-therefore it is just a matter of writing a wrapper that supplies
-that regular expression, and passes other arguments (like C<-optional>)
-to the C<String> constructor :
+mechanisms are not enough for your needs. For example, many domains
+could be expressed as a C<String> constrained by a regular
+expression; therefore it is just a matter of writing a wrapper that
+supplies that regular expression, and passes other arguments (like
+C<-optional>) to the C<String> constructor :
 
   sub Phone   { String(-regex    => qr/^\+?[0-9() ]+$/, 
                        -messages => "Invalid phone number", @_) }
@@ -1671,7 +1673,7 @@ C<messages> class method :
 
 The same method can also receive  a custom table.
 
-  my $custom_table = {...}; # see 
+  my $custom_table = {...};
   Data::Domain->messages($custom_table);
 
 This should be a two-level hashref : first-level entries in the hash
@@ -1797,8 +1799,7 @@ corresponds to the order of the checked domains.
 Convenience function to find a given node in a data tree, starting
 from the root and following a I<path> (a sequence of hash keys or
 array indices). Returns C<undef> if no such path exists in the tree.
-Mainly useful for contextual constraints in lazy constructors
-(see below).
+Mainly useful for contextual constraints in lazy constructors.
 
 =head2 msg
 
@@ -1808,6 +1809,16 @@ Internal utility method for generating an error message.
 
 Method that returns the short name of the subclass of C<Data::Domain> (i.e.
 returns 'Int' for C<Data::Domain::Int>).
+
+=head2 _expand_range
+
+Internal utility method for converting a "range" parameter
+into "min" and "max" parameters.
+
+=head2 _call_lazy_domain
+
+Internal utility method for dynamically converting
+lazy domains (coderefs) into domains.
 
 
 =head1 SEE ALSO
