@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 130;
+use Test::More tests => 132;
 use Data::Dumper;
 
 BEGIN {
@@ -99,7 +99,8 @@ ok($dom->inspect(undef), "Int / undef");
 # Date
 #----------------------------------------------------------------------
 
-$dom = Date;
+#$dom = Date;
+$dom = "Data::Domain::Date"->new; # try the full OO API
 ok(!$dom->inspect('01.02.2003'), "Date / ok");
 ok($dom->inspect('foo'), "Date / fail");
 ok($dom->inspect('31.02.2003'), "Date / fail");
@@ -110,6 +111,18 @@ ok($dom->inspect('01.01.1991'), "Date / bounds");
 ok($dom->inspect('01.01.2991'), "Date / bounds");
 ok(!$dom->inspect('01.01.2001'), "Date / bounds");
 ok($dom->inspect('02.02.2002'), "Date / excl. set");
+
+"Data::Domain::Date"->parser(sub {     # strict format dd.mm.yyyy
+  my $date = shift;
+  $date =~ /^(\d\d)\.(\d\d)\.(\d\d\d\d)$/
+    or return; 
+  return ($3, $2, $1);
+});
+$dom = Date;
+
+ok(! $dom->inspect('03.03.2003'), "strict date");
+ok($dom->inspect('3.3.2003'), "no short date");
+
 
 
 #----------------------------------------------------------------------

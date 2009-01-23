@@ -1,5 +1,17 @@
 Revision history for Data-Domain
 
+0.12 23.01.2009
+  - catch errors in lazy domain creation (reported as INVALID)
+
+0.11 02.12.2008 
+  - parse Date in an eval && check_date to generate 
+    INVALID => msg instead of low-level exception
+
+0.10   04.06.2008
+  - renamed internal subclasses as ::Ctor::.. to avoid name clashes
+    with the functional interface (i.e Data::Domain::Num(...), 
+    Data::Domain::Ctor::Num->new(...) ).
+
 0.09   04.02.2008
   - removed warning in Time::_print_time
   - check that lazy domains return proper domains

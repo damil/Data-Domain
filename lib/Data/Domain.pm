@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.09";
+our $VERSION = "0.12";
 
 my @builtin_domains = qw/Whatever
                          Num Int Date Time String
@@ -147,11 +147,11 @@ sub msg {
   my $msg;
 
   # if user_defined messages
-  if (defined $self->{-messages}) { 
-    for (ref $self->{-messages}) {
-      /CODE/ and return $self->{-messages}->($msg_id, @args); # user function
-      /^$/   and return "$name: $msgs";                       # user constant string
-      /HASH/ and do { $msg =  $self->{-messages}{$msg_id}     # user hash of msgs
+  if (defined $msgs) { 
+    for (ref $msgs) {
+      /CODE/ and return $msgs->($msg_id, @args); # user function
+      /^$/   and return "$name: $msgs";          # user constant string
+      /HASH/ and do { $msg =  $msgs->{$msg_id}   # user hash of msgs
                         and return sprintf "$name: $msg", @args;
                       last; # not found in this hash - revert to $global_msgs
                     };
@@ -204,7 +204,13 @@ sub _call_lazy_domain {
   my ($self, $domain, $context) = @_;
 
   if (UNIVERSAL::isa($domain, 'CODE')) {
-    $domain = $domain->($context);
+    $domain = eval {$domain->($context)} || do {
+      # error message without "at source_file, line ..."
+      (my $error_msg = $@) =~ s/\bat\b.*//s;
+      Data::Domain::_None->new(-name     => "domain parameters",
+                               -messages => $error_msg);
+    };
+
     UNIVERSAL::isa($domain, "Data::Domain")
         or croak "lazy domain coderef returned an invalid domain";
     }
@@ -259,7 +265,6 @@ sub node_from_path {
   # otherwise
   croak "node_from_path: incorrect root/path";
 }
-
 
 
 #======================================================================
@@ -454,7 +459,7 @@ our @ISA = 'Data::Domain';
 
 
 use autouse 'Date::Calc' => qw/Decode_Date_EU Decode_Date_US Date_to_Text
-                               Delta_Days  Add_Delta_Days Today/;
+                               Delta_Days  Add_Delta_Days Today check_date/;
 
 my $date_parser = \&Decode_Date_EU;
 
@@ -556,16 +561,19 @@ sub new {
 sub _inspect {
   my ($self, $data) = @_;
 
-  my @date = $date_parser->($data) 
+  my @date = eval {$date_parser->($data)};
+  @date && check_date(@date)
     or return $self->msg(INVALID => $data);
 
   if (defined $self->{-min}) {
-    _date_cmp(\@date, $self->{-min}) < 0
+    my $min = _expand_dynamic_date($self->{-min});
+    !check_date(@$min) || (_date_cmp(\@date, $min) < 0)
       and return $self->msg(TOO_SMALL => _print_date($self->{-min}));
   }
 
   if (defined $self->{-max}) {
-    _date_cmp(\@date, $self->{-max}) > 0
+    my $max = _expand_dynamic_date($self->{-max});
+    !check_date(@$max) || (_date_cmp(\@date, $max) > 0)
       and return $self->msg(TOO_BIG => _print_date($self->{-max}));
   }
 
@@ -929,6 +937,27 @@ sub _inspect {
   return \@msgs;
 }
 
+
+#======================================================================
+package Data::Domain::_None; # a domain that always fails
+#======================================================================
+use strict;
+use warnings;
+use Carp;
+our @ISA = 'Data::Domain';
+
+sub new {
+  my $class   = shift;
+  my @options = ();
+  my $self    = Data::Domain::_parse_args( \@_, \@options );
+  bless $self, $class;
+  return $self;
+}
+
+sub _inspect {
+  my ($self, $data) = @_;
+  return $self->msg(INVALID => "");
+}
 
 #======================================================================
 1;
