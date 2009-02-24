@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 132;
+use Test::More tests => 139;
 use Data::Dumper;
 
 BEGIN {
@@ -10,6 +10,7 @@ BEGIN {
 diag( "Testing Data::Domain $Data::Domain::VERSION, Perl $], $^X" );
 
 my $dom;
+my $msg;
 
 #----------------------------------------------------------------------
 # Whatever
@@ -65,6 +66,21 @@ ok(!$dom->inspect($dom), "Whatever-can / inspect msg subclass");
 
 $dom = Whatever(-can => [qw/dance sing/]);
 ok($dom->inspect($dom), "Whatever-can / dance sing");
+
+
+#----------------------------------------------------------------------
+# Empty
+#----------------------------------------------------------------------
+$dom = Empty(-messages => 'your data is wrong');
+ok($dom->inspect(0),     "Empty, false val");
+ok($dom->inspect(1),     "Empty, true val");
+ok($dom->inspect(undef), "Empty, undef val");
+ok($dom->inspect(),      "Empty, no val");
+ok($dom->inspect({}),    "Empty, hashref");
+$msg = $dom->inspect([]);
+ok($msg,                 "Empty, arrayref");
+is($msg, 'Empty: your data is wrong', "msg for Empty");
+
 
 #----------------------------------------------------------------------
 # Num
@@ -372,7 +388,7 @@ ok($dom->inspect({
 Data::Domain->messages("français");
 
 $dom = Int;
-my $msg = $dom->inspect("foobar");
+$msg = $dom->inspect("foobar");
 is($msg, "Int: nombre incorrect", "msg français");
 
 $dom = Int(-name => "PositiveInt", -min => 0);

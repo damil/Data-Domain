@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+0.13 24.02.2009
+  - added builtin Empty domain
+
 0.12 23.01.2009
   - catch errors in lazy domain creation (reported as INVALID)
 

@@ -6,9 +6,9 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.12";
+our $VERSION = "0.13";
 
-my @builtin_domains = qw/Whatever
+my @builtin_domains = qw/Whatever Empty
                          Num Int Date Time String
                          Enum List Struct One_of/;
 
@@ -54,7 +54,7 @@ my $builtin_msgs = {
     List => {
       NOT_A_LIST => "is not an arrayref",
       TOO_SHORT  => "less than %d items",
-      TOO_LONG   => "more than %d items",
+      TOO_LONG   => "more than %d its",
       ANY        => "should have at least one %s",
     },
     Struct => {
@@ -312,6 +312,30 @@ sub _inspect {
     }
   }
   return;    # otherwise : success
+}
+
+
+#======================================================================
+package Data::Domain::Empty;
+#======================================================================
+use strict;
+use warnings;
+use Carp;
+our @ISA = 'Data::Domain';
+
+sub new {
+  my $class   = shift;
+  my @options = ();
+  my $self    = Data::Domain::_parse_args( \@_, \@options );
+  bless $self, $class;
+
+  return $self;
+}
+
+sub _inspect {
+  my ($self, $data) = @_;
+
+  return $self->msg(INVALID => ''); # always fails
 }
 
 
@@ -1155,6 +1179,26 @@ The data must implement the listed methods, supplied either
 as an arrayref (several methods) or as a scalar (just one method).
 
 =back
+
+
+=head2 Empty
+
+Empty domain, that always fails when inspecting any data.
+This is sometimes useful within lazy constructors (see below),
+like in this example :
+
+  Struct(
+    foo => String,
+    bar => sub {
+      my $context = shift;
+      if (some_condition($context)) { 
+        return Empty(-messages => 'your data is wrong')
+      }
+      else {
+        ...
+      }
+    }
+  )
 
 
 =head2 Num
