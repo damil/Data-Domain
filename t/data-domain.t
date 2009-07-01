@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 139;
+use Test::More tests => 140;
 use Data::Dumper;
 
 BEGIN {
@@ -192,6 +192,10 @@ ok($dom->inspect("foo_much_too_long_string"), "String / too long");
 $dom = Enum(qw/foo bar buz/);
 ok(!$dom->inspect("foo"), "Enum ok");
 ok($dom->inspect("foobar"), "Enum fail");
+
+ok(! eval{$dom = Enum(qw/foo bar/, undef);},
+   "Enum: undef not allowed in list" );
+
 
 
 #----------------------------------------------------------------------

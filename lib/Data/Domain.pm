@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.13";
+our $VERSION = "0.14";
 
 my @builtin_domains = qw/Whatever Empty
                          Num Int Date Time String
@@ -717,6 +717,10 @@ sub new {
   bless $self, $class;
 
   eval {@{$self->{-values}}} or croak "Enum : incorrect set of values";
+
+  not grep {! defined $_} @{$self->{-values}}
+    or croak "Enum : undefined element in values";
+
   return $self;
 }
 
@@ -1404,6 +1408,9 @@ Ref to an array of values admitted in the domain.
 This would be called as C<< Enum(-values => [qw/foo bar buz/]) >>,
 but since this it is the default option, it can be
 simply written as C<< Enum(qw/foo bar buz/) >>.
+
+Undefined values are not allowed in the list (use
+the C<-optional> argument instead).
 
 =back
 
