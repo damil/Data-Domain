@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.14";
+our $VERSION = "0.15";
 
 my @builtin_domains = qw/Whatever Empty
                          Num Int Date Time String
@@ -412,6 +412,7 @@ package Data::Domain::String;
 use strict;
 use warnings;
 use Carp;
+use overload;
 our @ISA = 'Data::Domain';
 
 sub new {
@@ -437,7 +438,8 @@ sub new {
 sub _inspect {
   my ($self, $data) = @_;
 
-  defined($data)
+  # $data must be defined and scalar (or obj with a stringification method)
+  defined($data) && (!ref($data) || overload::Method($data, '""'))
     or return $self->msg(INVALID => $data);
   if ($self->{-min_length}) {
     length($data) >= $self->{-min_length} 

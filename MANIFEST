@@ -8,3 +8,4 @@ t/data-domain.t
 t/invalid-lazy.t
 t/pod-coverage.t
 t/pod.t
+META.json

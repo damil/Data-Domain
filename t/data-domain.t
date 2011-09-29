@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 140;
+use Test::More tests => 142;
 use Data::Dumper;
 
 BEGIN {
@@ -160,8 +160,11 @@ ok($dom->inspect('23:12'), "Time / bounds");
 # String
 #----------------------------------------------------------------------
 $dom = String;
-ok($dom->inspect(undef), "String / undef");
+ok($dom->inspect(undef),  "String / undef");
+ok($dom->inspect({}),     "String / ref");
 ok(!$dom->inspect("foo"), "String / ok");
+my $fake_string = FakeString->new(qw/a b c/); # FakeString : at end of file
+ok(!$dom->inspect($fake_string), "String / obj with stringification");
 
 $dom = String(qr/^(foo|bar)$/);
 ok(!$dom->inspect("foo"), "String / regex");
@@ -215,7 +218,7 @@ ok($dom->inspect([1.5, 2, "foo", "bar"]), "List items fail");
 ok($dom->inspect([1]), "List fail");
 ok($dom->inspect([]), "List fail2");
 ok(!$dom->inspect([1, 2]), "List optional");
-ok(!$dom->inspect([1, 2, {}]), "List wrong optional");
+ok($dom->inspect([1, 2, {}]), "List wrong optional");
 
 $dom = List(-size => [2, 5], -all => Int);
 ok(!$dom->inspect([1, 2, 3]), "List ok");
@@ -441,6 +444,21 @@ $msg = Contact->inspect({name => "Foo",
                          emails => ['foo.bar@foo.com']});
 
 ok(!$msg, "contact OK");
+
+
+#----------------------------------------------------------------------
+# class for testing stringification
+#----------------------------------------------------------------------
+package FakeString;
+use strict;
+use warnings;
+
+use overload '""' => sub {my $self = shift; join "", @$self};
+
+sub new {
+  my $class = shift;
+  bless [@_], $class;
+}
 
 
 

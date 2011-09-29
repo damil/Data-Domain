@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+0.15 29.09.2011
+  - https://rt.cpan.org/Ticket/Display.html?id=71188 (String accepts non-scalar)
+
 0.14 01.07.2009
   - undef not allowed in Enum list
 
