@@ -6,7 +6,7 @@ use warnings;
 use Exporter qw/import/;
 use Carp;
 
-our $VERSION = "0.15";
+our $VERSION = "0.16";
 
 my @builtin_domains = qw/Whatever Empty
                          Num Int Date Time String
@@ -994,6 +994,8 @@ sub _inspect {
 
 
 __END__
+
+=encoding ISO8859-1
 
 =head1 NAME
 

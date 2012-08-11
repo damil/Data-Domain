@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+0.16 11.08.2011
+  - specify POD =encoding so that new Pod::Simple is happy
+
 0.15 29.09.2011
   - https://rt.cpan.org/Ticket/Display.html?id=71188 (String accepts non-scalar)
 
