@@ -3,29 +3,58 @@ package Data::Domain; # documentation at end of file
 #======================================================================
 use strict;
 use warnings;
-use Exporter qw/import/;
 use Carp;
+use Scalar::Does;
+use Scalar::Util;
+use overload '~~' => \&_matches, '""' => \&_stringify;
 
-our $VERSION = "0.16";
+our $VERSION = "1.00";
 
-my @builtin_domains = qw/Whatever Empty
-                         Num Int Date Time String
-                         Enum List Struct One_of/;
 
-our %EXPORT_TAGS = (all => [@builtin_domains, 'node_from_path']);
-Exporter::export_ok_tags('all');
+our $MESSAGE; # global var for last message from ~~ (see '_matches')
+
+#----------------------------------------------------------------------
+# exports
+#----------------------------------------------------------------------
+
+my @domain_generators;
+my @builtin_domains;
+
+BEGIN {
+  @domain_generators = qw/Whatever Empty
+                              Num Int Date Time String
+                              Enum List Struct One_of All_of/;
+  @builtin_domains   = qw/True False Defined Undef Blessed Unblessed/;
+
+}
+use Sub::Exporter -setup => {
+  exports => ['node_from_path', @builtin_domains,
+              map {$_ => \&_wrap_domain} @domain_generators],
+  groups => {
+    generators => \@domain_generators,
+    builtins   => \@builtin_domains,
+   },
+};
+
 
 # convenience functions : for each builtin domain, we export a closure
 # that just calls new() on the corresponding subclass. For example,
 # Num(@args) is just equivalent to Data::Domain::Num->new(@args).
-
-foreach my $subclass (@builtin_domains) {
-  no strict 'refs';
-  my $full_class_name = "Data::Domain::" . $subclass;
-  *{$subclass} = sub { $full_class_name->new(@_) };
+sub _wrap_domain {
+  my ($class, $name, $args, $coll) = @_;
+  return sub {return "Data::Domain::$name"->new(@_)};
 }
 
+sub True      {Data::Domain::Whatever->new(-true    => 1, @_)}
+sub False     {Data::Domain::Whatever->new(-true    => 0, @_)}
+sub Defined   {Data::Domain::Whatever->new(-defined => 1, @_)}
+sub Undef     {Data::Domain::Whatever->new(-defined => 0, @_)}
+sub Blessed   {Data::Domain::Whatever->new(-blessed => 1, @_)}
+sub Unblessed {Data::Domain::Whatever->new(-blessed => 0, @_)}
 
+#----------------------------------------------------------------------
+# messages
+#----------------------------------------------------------------------
 
 my $builtin_msgs = {
   english => {
@@ -41,6 +70,9 @@ my $builtin_msgs = {
       MATCH_TRUE    => "data true/false",
       MATCH_ISA     => "is not a %s",
       MATCH_CAN     => "does not have method %s",
+      MATCH_DOES    => "does not have do %s",
+      MATCH_BLESSED => "data blessed/unblessed",
+      MATCH_SMART   => "does not smart-match %s",
     },
     Num    => {INVALID => "invalid number",},
     Date   => {INVALID => "invalid date",},
@@ -76,6 +108,9 @@ my $builtin_msgs = {
       MATCH_TRUE    => "donnée vraie/fausse",
       MATCH_ISA     => "n'est pas un  %s",
       MATCH_CAN     => "n'a pas la méthode %s",
+      MATCH_DOES    => "ne se comporte pas comme un %s",
+      MATCH_BLESSED => "donnée blessed/unblessed",
+      MATCH_SMART   => "n'obéit pas au smart-match %s",
     },
     Num    => {INVALID => "nombre incorrect",},
     Date   => {INVALID => "date incorrecte",},
@@ -186,7 +221,7 @@ sub _expand_range {
       not defined $self->{$_}
         or croak  "$name: incompatible options: $range_field / $_";
     }
-    UNIVERSAL::isa($range, 'ARRAY') and @$range == 2
+    does($range, 'ARRAY') and @$range == 2
         or croak  "$name: invalid argument for $range";
     @{$self}{$min_field, $max_field} = @$range;
   }
@@ -203,7 +238,7 @@ sub _expand_range {
 sub _call_lazy_domain {
   my ($self, $domain, $context) = @_;
 
-  if (UNIVERSAL::isa($domain, 'CODE')) {
+  if (does($domain, 'CODE')) {
     $domain = eval {$domain->($context)} || do {
       # error message without "at source_file, line ..."
       (my $error_msg = $@) =~ s/\bat\b.*//s;
@@ -211,7 +246,7 @@ sub _call_lazy_domain {
                                -messages => $error_msg);
     };
 
-    UNIVERSAL::isa($domain, "Data::Domain")
+    does($domain, "Data::Domain")
         or croak "lazy domain coderef returned an invalid domain";
     }
   return $domain;
@@ -258,13 +293,31 @@ sub node_from_path {
   return $root if not defined $path0;
   return undef if not defined $root;
   return node_from_path($root->{$path0}, @path) 
-    if UNIVERSAL::isa($root, 'HASH');
+    if does($root, 'HASH');
   return node_from_path($root->[$path0], @path) 
-    if UNIVERSAL::isa($root, 'ARRAY');
+    if does($root, 'ARRAY');
 
   # otherwise
   croak "node_from_path: incorrect root/path";
 }
+
+
+#----------------------------------------------------------------------
+# overloads
+#----------------------------------------------------------------------
+sub _matches {
+  my ($self, $data, $call_order) = @_;
+  $Data::Domain::MESSAGE = $self->inspect($data);
+  return !$Data::Domain::MESSAGE;
+}
+
+sub _stringify {
+  my ($self) = @_;
+  use Data::Dumper;
+  my $dumper = Data::Dumper->new([$self])->Indent(0)->Terse(1);
+  return $dumper->Dump;
+}
+
 
 
 #======================================================================
@@ -277,7 +330,7 @@ our @ISA = 'Data::Domain';
 
 sub new {
   my $class   = shift;
-  my @options = qw/-defined -true -isa -can/;
+  my @options = qw/-defined -true -isa -can -does -blessed -matches/;
   my $self    = Data::Domain::_parse_args( \@_, \@options );
   bless $self, $class;
 
@@ -301,15 +354,27 @@ sub _inspect {
       if $data xor $self->{-true};
   }
   if (defined $self->{-isa}) {
-    UNIVERSAL::isa($data, $self->{-isa})
+    Scalar::Does::does($data, $self->{-isa})
       or return $self->msg(MATCH_ISA => $self->{-isa});
+  }
+  if (defined $self->{-does}) {
+    Scalar::Does::does($data, $self->{-does})
+      or return $self->msg(MATCH_DOES => $self->{-does});
   }
   if (defined $self->{-can}) {
     my $methods = ref($self->{-can}) ? $self->{-can} : [$self->{-can}];
     foreach my $method (@$methods) {
-      UNIVERSAL::can($data, $method)
+      eval {$data->can($method)}
         or return $self->msg(MATCH_CAN => $method);
     }
+  }
+  if (defined $self->{-blessed}) {
+    return $self->msg(MATCH_BLESSED => $self->{-blessed})
+      if Scalar::Util::blessed($data) xor $self->{-blessed};
+  }
+  if (defined $self->{-matches}) {
+    $data ~~ $self->{-matches}
+      or return $self->msg(MATCH_SMART => $self->{-matches});
   }
   return;    # otherwise : success
 }
@@ -755,7 +820,7 @@ sub new {
   $self->_expand_range(qw/-size -min_size -max_size/);
 
   if ($self->{-items}) {
-    UNIVERSAL::isa($self->{-items}, 'ARRAY')
+    Scalar::Does::does($self->{-items}, 'ARRAY')
       or croak "invalid -items for Data::Domain::List";
 
     # if -items is given, then both -{min,max}_size cannot be shorter
@@ -772,7 +837,7 @@ sub new {
 sub _inspect {
   my ($self, $data, $context) = @_;
 
-  UNIVERSAL::isa($data, 'ARRAY')
+  Scalar::Does::does($data, 'ARRAY')
     or return $self->msg(NOT_A_LIST => $data);
 
   if (defined $self->{-min_size} && @$data < $self->{-min_size}) {
@@ -819,8 +884,8 @@ sub _inspect {
 
   # all other conditions were good, now check the "any" conditions
 
-  my @anys = UNIVERSAL::isa($self->{-any}, 'ARRAY') ? @{$self->{-any}} 
-               : $self->{-any} ? ($self->{-any}) : ();
+  my @anys = Scalar::Does::does($self->{-any}, 'ARRAY') ? @{$self->{-any}} 
+           : $self->{-any}                              ? ($self->{-any}) : ();
 
   # if there is an 'any' condition, there must be data to inspect
   return $self->msg(ANY => ($anys[0]{-name} || $anys[0]->subclass))
@@ -863,7 +928,7 @@ sub new {
   for (ref $fields) {
 
     # transform arrayref into hashref plus an ordered list of keys
-    /ARRAY/ and do { 
+    /^ARRAY/ and do { 
       $self->{-fields_list} = [];
       $self->{-fields}      = {};
       for (my $i = 0; $i < @$fields; $i += 2) {
@@ -875,7 +940,7 @@ sub new {
     };
 
     # keep given hashref, add list of keys
-    /HASH/ and do {
+    /^HASH/ and do {
       $self->{-fields_list} = [keys %$fields];
       last;
     };
@@ -895,7 +960,7 @@ sub _inspect {
   my ($self, $data, $context) = @_;
 
   # check that $data is a hashref
-  UNIVERSAL::isa($data, 'HASH')
+  Scalar::Does::does($data, 'HASH')
     or return $self->msg(NOT_A_HASH => $data);
 
   # check if there are any forbidden fields
@@ -948,7 +1013,7 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options, -options => 'arrayref');
   bless $self, $class;
 
-  $self->{-options} and ref($self->{-options}) eq 'ARRAY'
+  $self->{-options} and Scalar::Does::does($self->{-options}, 'ARRAY')
     or croak "One_of: invalid options";
 
   return $self;
@@ -966,6 +1031,40 @@ sub _inspect {
   }
   return \@msgs;
 }
+
+
+#======================================================================
+package Data::Domain::All_of;
+#======================================================================
+use strict;
+use warnings;
+use Carp;
+our @ISA = 'Data::Domain';
+
+sub new {
+  my $class = shift;
+  my @options = qw/-options/;
+  my $self = Data::Domain::_parse_args(\@_, \@options, -options => 'arrayref');
+  bless $self, $class;
+
+  $self->{-options} and Scalar::Does::does($self->{-options}, 'ARRAY')
+    or croak "All_of: invalid options";
+
+  return $self;
+}
+
+
+sub _inspect {
+  my ($self, $data, $context) = @_;
+  my @msgs;
+
+  for my $subdomain (@{$self->{-options}}) {
+    my $msg = $subdomain->inspect($data, $context);
+    push @msgs, $msg if $msg; # subdomain failed
+  }
+  return @msgs ? \@msgs : undef;
+}
+
 
 
 #======================================================================
@@ -1014,12 +1113,15 @@ Data::Domain - Data description and validation
     aString    => String(-min_length => 2, -optional => 1),
     anEnum     => Enum(qw/foo bar buz/),
     anIntList  => List(-min_size => 1, -all => Int),
-    aMixedList => List(Integer, String, Int(-min => 0), Date),
+    aMixedList => List(Integer, String, Int(-min => 0), Date, True, Defined),
     aStruct    => Struct(foo => String, bar => Int(-optional => 1))
   );
 
   my $messages = $domain->inspect($some_data);
-  my_display_error($messages) if $messages;
+  display_error($messages) if $messages;
+
+  $some_other_data ~~ $domain
+    or die "did not match because $Data::Domain::MESSAGE";
 
 =head1 DESCRIPTION
 
@@ -1061,6 +1163,7 @@ be tedious to write
 so for each of its builtin domain constructors, C<Data::Domain>
 exports a plain function that just calls C<new> on the appropriate 
 subclass. If you import those functions (C<use Data::Domain qw/:all/>,
+or C<use Data::Domain qw/:generators/>,
 or C<use Data::Domain qw/Struct Int Date .../>),
 then you can write more conveniently :
 
@@ -1070,13 +1173,62 @@ then you can write more conveniently :
     ...
   );
 
+=head2 Builtin domains
+
+C<Data::Domain> also exports some shortcuts for builtin domains;
+these are imported through C<use Data::Domain qw/:builtins/>
+or C<use Data::Domain qw/:all/> : 
+
+=over
+
+=item True
+
+=item False
+
+=item Defined
+
+=item Undef
+
+=item Blessed
+
+=back
+
+and correspond to 
+C<< Whatever(-true => 1) >>, 
+C<< Whatever(-true => 0) >>, etc. 
+(see the L</Whatever> class below).
+
+
+=head2 Renaming imported functions
+
 Short function names like C<Int> or C<String> are convenient, but 
-may cause name clashes with other modules.  If conflicts happen,
-don't import the function names, and explicitly call the
-C<new> method on domain constructors -- or write your own wrappers
-around them.
+may cause name clashes with other modules. However, thanks to the 
+powerful features of L<Sub::Exporter>, these functions
+can be renamed in various ways. Here is an example :
+
+  use Data::Domain -all => { -prefix => 'dom_' };
+  my $domain = dom_Struct(
+    anInt      => dom_Int(-min => 3, -max => 18),
+    aDate      => dom_Date(-max => 'today'),
+    ...
+  );
+
+See L<Sub::Exporter> for other renaming examples.
 
 
+=head2 Smart matching
+
+C<Data::Domain> overloads the smart match operator C<~~>,
+so one can write 
+
+  if ($data ~~ $domain) {...}
+
+instead of 
+
+  if (!my $msg = $domain->inspect($data)) {...}
+
+The error message from the last smart match operation can be
+retrieved from C<$Data::Domain::MESSAGE>.
 
 =head2 Methods
 
@@ -1152,6 +1304,13 @@ will be the form fields that gathered the data).
 
 =head1 BUILTIN DOMAIN CONSTRUCTORS
 
+B<Note> : each builtin domaine described in this chapter has a set of
+specific options, in addition to the generic options C<-optional>,
+C<-name> and C<-messages> mentioned above in method L</new>.
+Besides, some domains have a I<default option> which is syntactic sugar
+for using positional parameters instead of named parameters; see the
+L</String> and L</List> examples.
+
 =head2 Whatever
 
   my $domain = Struct(
@@ -1160,8 +1319,9 @@ will be the form fields that gathered the data).
     is_undef      => Whatever(-defined => 0),
     is_true       => Whatever(-true => 1),
     is_false      => Whatever(-true => 0),
-    is_object     => Whatever(-isa => 'My::Funny::Object'),
-    has_methods   => Whatever(-can => [qw/jump swim dance sing/]),
+    is_of_class   => Whatever(-isa  => 'Some::Class'),
+    does_role     => Whatever(-does => 'Some::Role'),
+    has_methods   => Whatever(-can  => [qw/jump swim dance sing/]),
   );
 
 Encapsulates just any kind of Perl value (including C<undef>). 
@@ -1185,6 +1345,11 @@ The data must be an object of the specified class.
 
 The data must implement the listed methods, supplied either
 as an arrayref (several methods) or as a scalar (just one method).
+
+=item -does
+
+The data must "do" the supplied role; this is decided
+through L<Scalar::Does>.
 
 =back
 
@@ -1213,7 +1378,9 @@ like in this example :
 
   my $domain = Num(-range =>[-3.33, 999], -not_in => [2, 3, 5, 7, 11]);
 
-Domain for numbers (including floats). Options are :
+Domain for numbers (including floats). Numbers are 
+recognized through L<Scalar::Util/looks_like_number>.
+Options for the domain are :
 
 =over
 
@@ -1244,7 +1411,9 @@ supplied as an arrayref.
 
   my $domain = Int(-min => 0, -max => 999, -not_in => [2, 3, 5, 7, 11]);
 
-Domain for integers. Accepts the same options as C<Num> and returns the 
+Domain for integers. Integers are 
+recognized through the regular expression C</^-?\d+$/>.
+This domain accepts the same options as C<Num> and returns the 
 same error messages.
 
 
@@ -1542,6 +1711,23 @@ the keyword may be omitted.
 =back
 
 
+=head2 All_of
+
+  my $domain = All_of($domain1, $domain2, ...);
+
+Intersection of domains : checks all member domains,
+and requires that all of them succeed. Options are:
+
+
+=over
+
+=item -options
+
+List of domains to be checked. This is the default option, so 
+the keyword may be omitted.
+
+=back
+
 
 
 =head1 LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)
@@ -1556,8 +1742,8 @@ the subdomain for C<date_end> can only be constructed
 when the argument to C<-min> is known, namely when
 the domain inspects an actual data structure.
 
-Lazy domain construction is achieved by supplying a function reference
-instead of a domain object. That function will be called with some
+Lazy domain construction is achieved by supplying a subroutine reference
+instead of a domain object. That subroutine will be called with some
 I<context> information, and should return the domain object.
 So our example becomes :
 
@@ -1725,8 +1911,8 @@ values should be the associated error strings.
 
 =item *
 
-a coderef : the referenced function is called, and the return
-value becomes the error string. The called function receives
+a coderef : the referenced subroutine is called, and the return
+value becomes the error string. The called subroutine receives
 the message identifier as argument.
 
 =back

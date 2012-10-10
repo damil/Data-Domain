@@ -1,5 +1,14 @@
 Revision history for Data-Domain
 
+1.00 
+  - use Scalar::Does instead of UNIVERSAL::isa
+  - new Whatever options : -blessed, -matches, -does
+  - overloads stringification and smart match operators
+  - use Sub::Exporter for exporting functions
+  - exports builtin domains : True, False, Blessed, Defined, etc.
+  - new domain generator 'All_of'
+  - tests structured in subtests
+
 0.16 11.08.2011
   - specify POD =encoding so that new Pod::Simple is happy
 
