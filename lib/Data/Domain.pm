@@ -4,8 +4,9 @@ package Data::Domain; # documentation at end of file
 use strict;
 use warnings;
 use Carp;
-use Scalar::Does;
-use Scalar::Util;
+use Scalar::Does ();
+use Scalar::Util ();
+use Try::Tiny;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
 our $VERSION = "1.00";
@@ -184,13 +185,13 @@ sub msg {
   # if user_defined messages
   if (defined $msgs) { 
     for (ref $msgs) {
-      /CODE/ and return $msgs->($msg_id, @args); # user function
-      /^$/   and return "$name: $msgs";          # user constant string
-      /HASH/ and do { $msg =  $msgs->{$msg_id}   # user hash of msgs
-                        and return sprintf "$name: $msg", @args;
-                      last; # not found in this hash - revert to $global_msgs
-                    };
-      croak "invalid -messages option";                       # otherwise
+      /^CODE/ and return $msgs->($msg_id, @args); # user function
+      /^$/    and return "$name: $msgs";          # user constant string
+      /^HASH/ and do { $msg =  $msgs->{$msg_id}   # user hash of msgs
+                         and return sprintf "$name: $msg", @args;
+                       last; # not found in this hash - revert to $global_msgs
+                     };
+      croak "invalid -messages option";           # otherwise
     }
   }
 
@@ -221,7 +222,7 @@ sub _expand_range {
       not defined $self->{$_}
         or croak  "$name: incompatible options: $range_field / $_";
     }
-    does($range, 'ARRAY') and @$range == 2
+    Scalar::Does::does($range, 'ARRAY') and @$range == 2
         or croak  "$name: invalid argument for $range";
     @{$self}{$min_field, $max_field} = @$range;
   }
@@ -238,15 +239,15 @@ sub _expand_range {
 sub _call_lazy_domain {
   my ($self, $domain, $context) = @_;
 
-  if (does($domain, 'CODE')) {
-    $domain = eval {$domain->($context)} || do {
-      # error message without "at source_file, line ..."
-      (my $error_msg = $@) =~ s/\bat\b.*//s;
-      Data::Domain::_None->new(-name     => "domain parameters",
-                               -messages => $error_msg);
-    };
+  if ($domain && Scalar::Does::does($domain, 'CODE')) {
+    $domain = try {$domain->($context)} 
+              catch {# error message without "at source_file, line ..."
+                     (my $error_msg = $_) =~ s/\bat\b.*//s;
+                     Data::Domain::_None->new(-name     => "domain parameters",
+                                              -messages => $error_msg);
+                   };
 
-    does($domain, "Data::Domain")
+    Scalar::Does::does($domain, "Data::Domain")
         or croak "lazy domain coderef returned an invalid domain";
     }
   return $domain;
@@ -293,9 +294,9 @@ sub node_from_path {
   return $root if not defined $path0;
   return undef if not defined $root;
   return node_from_path($root->{$path0}, @path) 
-    if does($root, 'HASH');
+    if Scalar::Does::does($root, 'HASH');
   return node_from_path($root->[$path0], @path) 
-    if does($root, 'ARRAY');
+    if Scalar::Does::does($root, 'ARRAY');
 
   # otherwise
   croak "node_from_path: incorrect root/path";
@@ -354,11 +355,11 @@ sub _inspect {
       if $data xor $self->{-true};
   }
   if (defined $self->{-isa}) {
-    Scalar::Does::does($data, $self->{-isa})
+    defined($data) && Scalar::Does::does($data, $self->{-isa})
       or return $self->msg(MATCH_ISA => $self->{-isa});
   }
   if (defined $self->{-does}) {
-    Scalar::Does::does($data, $self->{-does})
+    defined($data) && Scalar::Does::does($data, $self->{-does})
       or return $self->msg(MATCH_DOES => $self->{-does});
   }
   if (defined $self->{-can}) {
@@ -837,7 +838,7 @@ sub new {
 sub _inspect {
   my ($self, $data, $context) = @_;
 
-  Scalar::Does::does($data, 'ARRAY')
+  defined($data) && Scalar::Does::does($data, 'ARRAY')
     or return $self->msg(NOT_A_LIST => $data);
 
   if (defined $self->{-min_size} && @$data < $self->{-min_size}) {
@@ -883,9 +884,11 @@ sub _inspect {
   return \@msgs if $has_invalid; 
 
   # all other conditions were good, now check the "any" conditions
+  my @anys = $self->{-any} 
+                ? Scalar::Does::does($self->{-any}, 'ARRAY') ? @{$self->{-any}}
+                                                             : ($self->{-any})
+                : ();
 
-  my @anys = Scalar::Does::does($self->{-any}, 'ARRAY') ? @{$self->{-any}} 
-           : $self->{-any}                              ? ($self->{-any}) : ();
 
   # if there is an 'any' condition, there must be data to inspect
   return $self->msg(ANY => ($anys[0]{-name} || $anys[0]->subclass))
@@ -960,7 +963,7 @@ sub _inspect {
   my ($self, $data, $context) = @_;
 
   # check that $data is a hashref
-  Scalar::Does::does($data, 'HASH')
+  defined($data) && Scalar::Does::does($data, 'HASH')
     or return $self->msg(NOT_A_HASH => $data);
 
   # check if there are any forbidden fields
@@ -1190,6 +1193,8 @@ or C<use Data::Domain qw/:all/> :
 =item Undef
 
 =item Blessed
+
+=item Unblessed
 
 =back
 
@@ -1990,7 +1995,8 @@ by the builtin constructors.
 
 =item C<Whatever>
 
-C<MATCH_DEFINED>, C<MATCH_TRUE>, C<MATCH_ISA>, C<MATCH_CAN>.
+C<MATCH_DEFINED>, C<MATCH_TRUE>, C<MATCH_ISA>, C<MATCH_CAN>,
+C<MATCH_DOES>, C<MATCH_BLESSED>, C<MATCH_SMART>.
 
 =item C<Num>
 
@@ -2102,8 +2108,9 @@ L<CGI::FormBuilder|CGI::FormBuilder>,
 L<HTML::Widget::Constraint|HTML::Widget::Constraint>,
 L<Jifty::DBI|Jifty::DBI>,
 L<Data::Constraint|Data::Constraint>,
-L<Declare::Constraints::Simple|Declare::Constraints::Simple>.
-Among those, C<Declare::Constraints::Simple> is the closest to 
+L<Declare::Constraints::Simple|Declare::Constraints::Simple>,
+L<Moose::Manual::Types>.
+Among those, C<Declare::Constraints::Simple> is the closest to
 C<Data::Domain>, because it is also designed to deal with
 substructures; yet it has a different approach to combinations
 of constraints and scope dependencies.
@@ -2128,7 +2135,7 @@ Laurent Dami, E<lt>laurent.d...@etat.geneve.chE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006, 2007 by Laurent Dami.
+Copyright 2006, 2007, 2012 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself. 

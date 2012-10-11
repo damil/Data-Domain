@@ -13,6 +13,7 @@ my $builder = Module::Build->new(
       'Date::Calc'    => 0,
       'Scalar::Does'  => 0,
       'Sub::Exporter' => 0,
+      'Try::Tiny'     => 0,
      },
     build_requires => {
       'Test::More'   => 0,
