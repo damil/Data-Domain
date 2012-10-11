@@ -1,6 +1,8 @@
 Revision history for Data-Domain
 
-1.00 
+  - removed internal domain _None (useless because same as 'Empty')
+
+1.00 11.10.2012
   - use Scalar::Does instead of UNIVERSAL::isa
   - new Whatever options : -blessed, -matches, -does
   - overloads stringification and smart match operators

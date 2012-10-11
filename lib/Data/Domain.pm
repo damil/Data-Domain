@@ -11,7 +11,6 @@ use overload '~~' => \&_matches, '""' => \&_stringify;
 
 our $VERSION = "1.00";
 
-
 our $MESSAGE; # global var for last message from ~~ (see '_matches')
 
 #----------------------------------------------------------------------
@@ -243,7 +242,7 @@ sub _call_lazy_domain {
     $domain = try {$domain->($context)} 
               catch {# error message without "at source_file, line ..."
                      (my $error_msg = $_) =~ s/\bat\b.*//s;
-                     Data::Domain::_None->new(-name     => "domain parameters",
+                     Data::Domain::Empty->new(-name     => "domain parameters",
                                               -messages => $error_msg);
                    };
 
@@ -1069,28 +1068,6 @@ sub _inspect {
 }
 
 
-
-#======================================================================
-package Data::Domain::_None; # a domain that always fails
-#======================================================================
-use strict;
-use warnings;
-use Carp;
-our @ISA = 'Data::Domain';
-
-sub new {
-  my $class   = shift;
-  my @options = ();
-  my $self    = Data::Domain::_parse_args( \@_, \@options );
-  bless $self, $class;
-  return $self;
-}
-
-sub _inspect {
-  my ($self, $data) = @_;
-  return $self->msg(INVALID => "");
-}
-
 #======================================================================
 1;
 
@@ -1123,8 +1100,23 @@ Data::Domain - Data description and validation
   my $messages = $domain->inspect($some_data);
   display_error($messages) if $messages;
 
+  # smart match API
   $some_other_data ~~ $domain
     or die "did not match because $Data::Domain::MESSAGE";
+
+  # custom name and custom messages (2 different ways)
+  $domain = Int(-name => 'age', -min => 3, -max => 18, 
+                -messages => "only for people aged 3-18");
+  $domain = Int(-name => 'age', -min => 3, -max => 18, -messages => {
+                   TOO_BIG   => "not for old people over %d",
+                   TOO_SMALL => "not for babies under %d",
+                 });
+
+  # recursive domain
+  my $expr_domain = One_of(Num, Struct(operator => String(qr(^[-+*/]$)),
+                                       left     => sub {$expr_domain},
+                                       right    => sub {$expr_domain}));
+
 
 =head1 DESCRIPTION
 

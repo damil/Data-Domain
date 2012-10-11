@@ -506,9 +506,9 @@ subtest "messages" => sub {
   $dom = Int(-min => 4, 
              -max => 5,
              -messages => {TOO_SMALL => "too small", 
-                           TOO_BIG => "too big"}); 
+                           TOO_BIG => "too big (over %d)"}); 
   $msg = $dom->inspect(99);
-  is($msg, "Int: too big", "msg direct");
+  is($msg, "Int: too big (over 5)", "msg direct");
 
   $dom = Int(-min => 4, 
              -max => 5,
