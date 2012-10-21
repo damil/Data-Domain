@@ -7,9 +7,10 @@ use Carp;
 use Scalar::Does ();
 use Scalar::Util ();
 use Try::Tiny;
+use List::MoreUtils qw/part/;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
-our $VERSION = "1.00";
+our $VERSION = "1.01";
 
 our $MESSAGE; # global var for last message from ~~ (see '_matches')
 
@@ -28,14 +29,36 @@ BEGIN {
 
 }
 use Sub::Exporter -setup => {
-  exports => ['node_from_path', @builtin_domains,
-              map {$_ => \&_wrap_domain} @domain_generators],
-  groups => {
-    generators => \@domain_generators,
-    builtins   => \@builtin_domains,
-   },
+  exports    => [ 'node_from_path', @builtin_domains,
+                  map {$_ => \&_wrap_domain} @domain_generators],
+  groups     => { generators => \@domain_generators,
+                  builtins   => \@builtin_domains,  },
+  collectors => { INIT => \&_sub_exporter_init },
+  installer  => \&_sub_exporter_installer,
 };
 
+# customizing Sub::Exporter to support "bang-syntax" (excluding symbols)
+# see https://rt.cpan.org/Public/Bug/Display.html?id=80234
+{ my @dont_export;
+
+  sub _sub_exporter_init {
+    my ($collection, $context) = @_;
+
+    my $args = $context->{import_args};
+    my ($exclude, $regular_args) 
+      = part {!ref $_->[0] && $_->[0] =~ /^!/ ? 0 : 1} @$args;
+    @$args = @$regular_args;
+    @dont_export = map {substr($_->[0], 1)} @$exclude;
+    1;
+  }
+
+  sub _sub_exporter_installer {
+    my ($arg, $to_export) = @_;
+    my %export_hash = @$to_export;
+    delete @export_hash{@dont_export};
+    Sub::Exporter::default_installer($arg, [%export_hash]);
+  }
+}
 
 # convenience functions : for each builtin domain, we export a closure
 # that just calls new() on the corresponding subclass. For example,
@@ -239,7 +262,7 @@ sub _call_lazy_domain {
   my ($self, $domain, $context) = @_;
 
   if ($domain && Scalar::Does::does($domain, 'CODE')) {
-    $domain = try {$domain->($context)} 
+    $domain = try   {$domain->($context)} 
               catch {# error message without "at source_file, line ..."
                      (my $error_msg = $_) =~ s/\bat\b.*//s;
                      Data::Domain::Empty->new(-name     => "domain parameters",
@@ -247,8 +270,8 @@ sub _call_lazy_domain {
                    };
 
     Scalar::Does::does($domain, "Data::Domain")
-        or croak "lazy domain coderef returned an invalid domain";
-    }
+      or croak "lazy domain coderef returned an invalid domain";
+  }
   return $domain;
 }
 
@@ -1210,7 +1233,15 @@ can be renamed in various ways. Here is an example :
     ...
   );
 
-See L<Sub::Exporter> for other renaming examples.
+See L<Sub::Exporter> for other examples of renaming imported functions.
+
+To preserve backwards compatibility with L<Exporter>, the present
+module also supports "bang-syntax" to exclude some specific symbols
+from the import list : 
+
+  use Data::Domain qw/:all !Date/;
+
+will import everything except the C<Date> function.
 
 
 =head2 Smart matching
@@ -2101,7 +2132,8 @@ L<HTML::Widget::Constraint|HTML::Widget::Constraint>,
 L<Jifty::DBI|Jifty::DBI>,
 L<Data::Constraint|Data::Constraint>,
 L<Declare::Constraints::Simple|Declare::Constraints::Simple>,
-L<Moose::Manual::Types>.
+L<Moose::Manual::Types>,
+L<Smart::Match>.
 Among those, C<Declare::Constraints::Simple> is the closest to
 C<Data::Domain>, because it is also designed to deal with
 substructures; yet it has a different approach to combinations
