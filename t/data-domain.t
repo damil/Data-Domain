@@ -1,8 +1,6 @@
 #!perl
 
 use Test::More tests => 18;
-use Data::Dumper;
-
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
 
@@ -116,7 +114,7 @@ subtest "Empty" => sub {
 #----------------------------------------------------------------------
 
 subtest "Num" => sub {
-  plan tests => 10;
+  plan tests => 11;
   $dom = Num;
   ok(!$dom->inspect(-3.33), "Num / ok");
   ok($dom->inspect(undef), "Num / undef");
@@ -130,6 +128,9 @@ subtest "Num" => sub {
   ok($dom->inspect(2), "Num / bounds");
   ok($dom->inspect(0.5), "Num / excl. set");
   ok($dom->inspect(0.7), "Num / excl. set");
+
+  $dom = eval {Num(-range => [5, 2])};
+  ok(!$dom && $@ =~ m(min/max), "Num invalid min/max");
 };
 
 
@@ -152,7 +153,7 @@ subtest "Int" => sub {
 #----------------------------------------------------------------------
 
 subtest "Date" => sub {
-  plan tests => 9;
+  plan tests => 10;
 
   #$dom = Date;
   $dom = "Data::Domain::Date"->new; # try the full OO API
@@ -166,6 +167,9 @@ subtest "Date" => sub {
   ok($dom->inspect('01.01.2991'), "Date / bounds");
   ok(!$dom->inspect('01.01.2001'), "Date / bounds");
   ok($dom->inspect('02.02.2002'), "Date / excl. set");
+
+  $dom = eval {Date(-range => [qw/01.02.2003 03.02.2001/])};
+  ok(!$dom && $@ =~ m(min/max), "Date invalid min/max");
 
   "Data::Domain::Date"->parser(sub {     # strict format dd.mm.yyyy
     my $date = shift;
@@ -184,7 +188,7 @@ subtest "Date" => sub {
 # Time
 #----------------------------------------------------------------------
 subtest "Time" => sub {
-  plan tests => 6;
+  plan tests => 7;
 
   $dom = Time;
   ok(!$dom->inspect('10:14'), "Time / ok");
@@ -195,6 +199,9 @@ subtest "Time" => sub {
   ok(!$dom->inspect('12:12'), "Time / ok bounds");
   ok($dom->inspect('06:12'), "Time / bounds");
   ok($dom->inspect('23:12'), "Time / bounds");
+
+  $dom = eval {Time(-range => ['05:00', '02:00'])};
+  ok(!$dom && $@ =~ m(min/max), "Time invalid min/max");
 };
 
 
@@ -202,7 +209,7 @@ subtest "Time" => sub {
 # String
 #----------------------------------------------------------------------
 subtest "String" => sub {
-  plan tests => 13;
+  plan tests => 14;
 
   $dom = String;
   ok($dom->inspect(undef),  "String / undef");
@@ -230,6 +237,9 @@ subtest "String" => sub {
   ok($dom->inspect("foo_"), "String / too short");
   ok($dom->inspect("foo_much_too_long_string"), "String / too long");
   ok($dom->inspect("foo_much_too_long_string"), "String / too long");
+
+  $dom = eval {String(-length => [5, 2])};
+  ok(!$dom && $@ =~ m(min/max), "String invalid min/max length");
 };
 
 
@@ -254,7 +264,7 @@ subtest "Enum" => sub {
 #----------------------------------------------------------------------
 
 subtest "List" => sub {
-  plan tests => 25;
+  plan tests => 26;
 
   $dom = List;
   ok(!$dom->inspect([]), "List ok");
@@ -294,6 +304,9 @@ subtest "List" => sub {
   ok($dom->inspect(['foo', 2, 3, 'bar', 'bie']), "List 2 anys nok 2");
   ok(!$dom->inspect(['foo', 2, 3, 'foobar']), "List 2 anys ok 1");
   ok(!$dom->inspect(['foo', 2, undef, 3, 'foobar']), "List 2 anys ok 2");
+
+  $dom = eval {List(-items => [String, Num], -size => [5, 2])};
+  ok(!$dom && $@ =~ m(min/max), "List invalid min/max size");
 };
 
 #----------------------------------------------------------------------
@@ -452,25 +465,24 @@ subtest "Lazy" => sub {
   $dom = List(-all => sub {
         my $context = shift;
         my $index = $context->{path}[-1];
-        return Int if $index == 0; # first item has no constraint
-        return Int(-min => $context->{list}[$index-1] + 1);
+        return $index == 0 ? Int
+                           : Int(-min => $context->{list}[$index-1]);
       });
-  ok(!$dom->inspect([1, 2, 3, 5, 7, 11, 13]), "order ok");
-  ok($dom->inspect([1, 2, 5, 3, 7, 11, 13]), "order fail");
-
-
+  ok(!$dom->inspect([1, 1, 2, 3, 5, 8, 13]), "order ok");
+  ok($dom->inspect([1, 1, 2, 5, 3, 8, 13]), "order fail");
 
   $dom = One_of(Num, Struct(op    => String(qr(^[-+*/]$)),
                             left  => sub {$dom},
                             right => sub {$dom}));
+
   ok(!$dom->inspect({
-    op => '*', 
+    op => '*',
     left => {op => '+', left => 4, right => 5},
     right => 9
    }), "recursive ok");
 
   ok($dom->inspect({
-    op => '*', 
+    op => '*',
     left => {op => '+', left => 4, right => 5},
     right => {}
    }), "recursive fail");
@@ -520,6 +532,8 @@ subtest "messages" => sub {
   $dom = Int(-min => 0);
   $msg = $dom->inspect(-99);
   is($msg, "validation error (TOO_SMALL)", "msg global sub");
+
+  Data::Domain->messages("english");
 };
 
 
@@ -528,8 +542,7 @@ subtest "messages" => sub {
 #----------------------------------------------------------------------
 
 subtest "doc" => sub {
-  plan tests => 1;
-
+  plan tests => 4;
 
   sub Phone   { String(-regex => qr/^\+?[0-9() ]+$/, @_) }
   sub Email   { String(-regex => qr/^[-.\w]+\@[\w.]+$/, @_) }
@@ -543,6 +556,19 @@ subtest "doc" => sub {
                            emails => ['foo.bar@foo.com']});
 
   ok(!$msg, "contact OK");
+
+
+  $dom = Struct( foo => 123,
+                 bar => List(Int, 'buz', Int) );
+  ok(!$dom->inspect({foo => 123, bar => [1, buz => 2]}), "constant subdomains");
+  $msg = $dom->inspect({foo => "foo", bar => [buz => 1, 2]});
+  ok($msg, "constant subdomains ERR1");
+  note(explain($msg));
+
+  $msg = $dom->inspect({foo => 111, bar => [1, zorglub => 3]});
+  ok($msg, "constant subdomains ERR2");
+  note(explain($msg));
+
 };
 
 
