@@ -3,7 +3,6 @@
 use Test::More tests => 18;
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
-
 diag( "Testing Data::Domain $Data::Domain::VERSION, Perl $], $^X" );
 
 my $dom;

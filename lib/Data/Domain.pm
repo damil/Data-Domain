@@ -5,7 +5,7 @@ use 5.010;
 use strict;
 use warnings;
 use Carp;
-use Scalar::Does; # should require 0.007
+use Scalar::Does 0.007;
 use Scalar::Util ();
 use Try::Tiny;
 use List::MoreUtils qw/part/;
@@ -19,32 +19,32 @@ our $MESSAGE; # global var for last message from ~~ (see '_matches')
 # exports
 #----------------------------------------------------------------------
 
-my @domain_generators;
-my @builtin_domains;
+my @constructors;
+my @shortcuts;
 
 BEGIN {
-  @domain_generators = qw/Whatever Empty
-                          Num Int Date Time String
-                          Enum List Struct One_of All_of/;
-  @builtin_domains   = qw/True False Defined Undef Blessed Unblessed/;
+  @constructors = qw/Whatever Empty
+                     Num Int Date Time String
+                     Enum List Struct One_of All_of/;
+  @shortcuts    = qw/True False Defined Undef Blessed Unblessed
+                     Obj Class/;
 
 }
 use Sub::Exporter -setup => {
-  exports    => [ 'node_from_path', @builtin_domains,
-                  map {$_ => \&_wrap_domain} @domain_generators],
-  groups     => { generators => \@domain_generators,
-                  builtins   => \@builtin_domains,  },
+  exports    => [ 'node_from_path', @shortcuts,
+                  map {$_ => \&_wrap_domain} @constructors],
+  groups     => { constructors => \@constructors,
+                  shortcuts    => \@shortcuts,  },
   collectors => { INIT => \&_sub_exporter_init },
   installer  => \&_sub_exporter_installer,
 };
 
-# customizing Sub::Exporter to support "bang-syntax" (excluding symbols)
+# customizing Sub::Exporter to support "bang-syntax" for excluding symbols
 # see https://rt.cpan.org/Public/Bug/Display.html?id=80234
 { my @dont_export;
 
   sub _sub_exporter_init {
     my ($collection, $context) = @_;
-
     my $args = $context->{import_args};
     my ($exclude, $regular_args) 
       = part {!ref $_->[0] && $_->[0] =~ /^!/ ? 0 : 1} @$args;
@@ -61,7 +61,7 @@ use Sub::Exporter -setup => {
   }
 }
 
-# convenience functions : for each builtin domain, we export a closure
+# constructors : for each domain constructor, we export a closure
 # that just calls new() on the corresponding subclass. For example,
 # Num(@args) is just equivalent to Data::Domain::Num->new(@args).
 sub _wrap_domain {
@@ -69,12 +69,16 @@ sub _wrap_domain {
   return sub {return "Data::Domain::$name"->new(@_)};
 }
 
+# shortcuts : calling 'Whatever' with various pre-built options
 sub True      {Data::Domain::Whatever->new(-true    => 1, @_)}
 sub False     {Data::Domain::Whatever->new(-true    => 0, @_)}
 sub Defined   {Data::Domain::Whatever->new(-defined => 1, @_)}
 sub Undef     {Data::Domain::Whatever->new(-defined => 0, @_)}
 sub Blessed   {Data::Domain::Whatever->new(-blessed => 1, @_)}
 sub Unblessed {Data::Domain::Whatever->new(-blessed => 0, @_)}
+sub Obj       {Data::Domain::Whatever->new(-blessed => 1, @_)}
+sub Class     {Data::Domain::Whatever->new(-blessed => 0, 
+                                           -isa => 'UNIVERSAL', @_)}
 
 #----------------------------------------------------------------------
 # messages
@@ -279,7 +283,7 @@ sub _build_subdomain {
       $domain = try   {$domain->($context)} 
                 catch {# remove "at source_file, line ..." from error message
                        (my $error_msg = $_) =~ s/\bat\b.*//s;
-                       Data::Domain::Empty->new(-name     => "domain parameters",
+                       Data::Domain::Empty->new(-name => "domain parameters",
                                                 -messages => $error_msg);
                      };
 
@@ -850,6 +854,7 @@ package Data::Domain::List;
 use strict;
 use warnings;
 use Carp;
+use List::MoreUtils qw/all/;
 our @ISA = 'Data::Domain';
 
 sub new {
@@ -869,6 +874,16 @@ sub new {
     for my $bound (qw/-min_size -max_size/) {
       croak "$bound does not match -items"
       if $self->{$bound} and $self->{$bound} < @{$self->{-items}};
+    }
+  }
+
+  # check that -all or -any are domains or lists of domains
+  for my $arg (qw/-all -any/) {
+    if (my $dom = $self->{$arg}) {
+      $dom = [$dom] unless Scalar::Does::does($dom, 'ARRAY');
+      all {Scalar::Does::does($_, 'Data::Domain') || 
+           Scalar::Does::does($_, 'CODE')} @$dom
+        or croak "invalid arg to $arg in Data::Domain::List";
     }
   }
 
@@ -914,11 +929,15 @@ sub _inspect {
     $has_invalid ||= $msgs[$i];
   }
 
-  # check the -all condition
-  if ($self->{-all}) {
-    for (my $i = $n_items; $i < $n_data; $i++) {
+  # check the -all condition (can be a single domain or an arrayref of domains)
+  if (my $all = $self->{-all}) {
+    $all = [$all] unless Scalar::Does::does($all, 'ARRAY');
+    my $n_all = @$all;
+    for (my $i = $n_items, my $j = 0; 
+         $i < $n_data; 
+         $i++, $j = ($j + 1) % $n_all) {
       local $context->{path} = [@{$context->{path}}, $i];
-      my $subdomain  = $self->_build_subdomain($self->{-all}, $context);
+      my $subdomain  = $self->_build_subdomain($all->[$j], $context);
       $msgs[$i]      = $subdomain->inspect($data->[$i], $context);
       $has_invalid ||= $msgs[$i];
     }
@@ -928,27 +947,25 @@ sub _inspect {
   return \@msgs if $has_invalid; 
 
   # all other conditions were good, now check the "any" conditions
-  my @anys = $self->{-any} 
-                ? Scalar::Does::does($self->{-any}, 'ARRAY') ? @{$self->{-any}}
-                                                             : ($self->{-any})
-                : ();
+  if (my $any = $self->{-any}) {
+    $any = [$any] unless Scalar::Does::does($any, 'ARRAY');
 
+    # there must be data to inspect
+    $n_data > $n_items
+      or return $self->msg(ANY => ($any->[0]{-name} || $any->[0]->subclass));
 
-  # if there is an 'any' condition, there must be data to inspect
-  return $self->msg(ANY => ($anys[0]{-name} || $anys[0]->subclass))
-      if @anys and not $n_data > $n_items;
-
-  # inspect the remaining data for all 'any' conditions
- ANYS:
-  foreach my $any (@anys) {
-    my $subdomain;
-    for (my $i = $n_items; $i < $n_data; $i++) {
-      local $context->{path} = [@{$context->{path}}, $i];
-         $subdomain = $self->_build_subdomain($any, $context);
-      my $error     = $subdomain->inspect($data->[$i], $context);
-      next ANYS if not $error;
+    # inspect the remaining data for all 'any' conditions
+  ANY:
+    foreach my $condition (@$any) {
+      my $subdomain;
+      for (my $i = $n_items; $i < $n_data; $i++) {
+        local $context->{path} = [@{$context->{path}}, $i];
+        $subdomain = $self->_build_subdomain($condition, $context);
+        my $error  = $subdomain->inspect($data->[$i], $context);
+        next ANY if not $error;
+      }
+      return $self->msg(ANY => ($subdomain->{-name} || $subdomain->subclass));
     }
-    return $self->msg(ANY => ($subdomain->{-name} || $subdomain->subclass));
   }
 
   return; # OK, no error
@@ -1129,19 +1146,16 @@ Data::Domain - Data description and validation
 
   use Data::Domain qw/:all/;
 
-  # defining a domain
-  my $domain = Struct(
-    anInt      => Int(-min => 3, -max => 18),
-    aNum       => Num(-min => 3.33, -max => 18.5),
-    aDate      => Date(-max => 'today'),
-    aLaterDate => sub {my $context = shift;
-                       Date(-min => $context->{flat}{aDate})},
-    aString    => String(-min_length => 2, -optional => 1),
-    anEnum     => Enum(qw/foo bar buz/),
-    anIntList  => List(-min_size => 1, -all => Int),
-    aMixedList => List(Integer, String, Int(-min => 0), Date, True, Defined),
-    aStruct    => Struct(foo => String, bar => Int(-optional => 1))
-  );
+  # some basic domains
+  my $int_dom      = Int(-min => 3, -max => 18);
+  my $num_dom      = Num(-min => 3.33, -max => 18.5);
+  my $string_dom   = String(-min_length => 2, -optional => 1);
+  my $enum_dom     = Enum(qw/foo bar buz/);
+  my $int_list_dom = List(-min_size => 1, -all => Int);
+  my $mixed_list   = List(String, Int(-min => 0), Date, True, Defined);
+  my $struct_dom   = Struct(foo => String, bar => Int(-optional => 1));
+  my $obj_dom      = Obj(-can => 'print');
+  my $class_dom    = Class(-can => 'print');
 
   # using the domain to check data
   my $messages = $domain->inspect($some_data);
@@ -1169,14 +1183,25 @@ Data::Domain - Data description and validation
                                    mobile => Phone(-optional => 1),
                                    emails => List(-all => Email)   ], @_) }
 
+  # lazy subdomain
+  $domain = Struct(
+    date_begin => Date(-max => 'today'),
+    date_end   => sub {my $context = shift;
+                       Date(-min => $context->{flat}{date_begin})},
+  );
+
   # recursive domain
-  my $expr_domain = One_of(Num, Struct(operator => String(qr(^[-+*/]$)),
-                                       left     => sub {$expr_domain},
-                                       right    => sub {$expr_domain}));
+  my $expr_domain;
+  $expr_domain = One_of(Num, Struct(operator => String(qr(^[-+*/]$)),
+                                    left     => sub {$expr_domain},
+                                    right    => sub {$expr_domain}));
 
   # constants in deep datastructures
   $domain = Struct( foo => 123,                     # 123   becomes a domain
                     bar => List(Int, 'buz', Int) ); # 'buz' becomes a domain
+
+  # list with repetitive structure
+  my $domain = List(-all  => [String, Int, Whatever(-can => 'print')]);
 
 =head1 DESCRIPTION
 
@@ -1202,9 +1227,17 @@ There are several other packages in CPAN doing data validation; these
 are briefly listed in the L</"SEE ALSO"> section.
 
 
-=head1 GLOBAL API
+=head1 EXPORTS
 
-=head2 Shortcut functions for domain constructors
+=head2 Domain constructors
+
+  use Data::Domain qw/:all/;
+  # or
+  use Data::Domain qw/:constructors/;
+  # or
+  use Data::Domain qw/Whatever Empty
+                      Num Int Date Time String
+                      Enum List Struct One_of All_of/;
 
 Internally, domains are represented as Perl objects; however, it would
 be tedious to write
@@ -1216,11 +1249,9 @@ be tedious to write
   );
 
 so for each of its builtin domain constructors, C<Data::Domain>
-exports a plain function that just calls C<new> on the appropriate 
-subclass. If you import those functions (C<use Data::Domain qw/:all/>,
-or C<use Data::Domain qw/:generators/>,
-or C<use Data::Domain qw/Struct Int Date .../>),
-then you can write more conveniently :
+exports a plain function that just calls C<new> on the appropriate
+subclass; these functions are all exported in in a group called
+C<:constructors>. Hence it is more convenient to write :
 
   my $domain = Struct(
     anInt => Int(-min => 3, -max => 18),
@@ -1228,42 +1259,29 @@ then you can write more conveniently :
     ...
   );
 
-=head2 Builtin domains
+The list of available domain constructors will be expanded below
+in L</"BUILTIN DOMAIN CONSTRUCTORS">.
 
-C<Data::Domain> also exports some shortcuts for builtin domains;
-these are imported through C<use Data::Domain qw/:builtins/>
-or C<use Data::Domain qw/:all/> : 
+=head2 Shortcuts (predefined options)
 
-=over
+  use Data::Domain qw/:all/;
+  # or
+  use Data::Domain qw/:shortcuts/;
+  # or
+  use Data::Domain qw/True False Defined Undef Blessed Unblessed
+                      Obj Class/;
 
-=item True
-
-=item False
-
-=item Defined
-
-=item Undef
-
-=item Blessed
-
-=item Unblessed
-
-=back
-
-and correspond to 
-C<< Whatever(-true => 1) >>, 
-C<< Whatever(-true => 0) >>, 
-C<< Whatever(-defined => 1) >>, 
-etc. 
-(see the L</Whatever> class below).
-
+The C<:shortcuts> export group contains a number of convenience
+functions that call the L</Whatever> domain constructor with
+various pre-built options. Precise definitions for each of these
+functions will be given below in L</"BUILTIN SHORTCUTS">.
 
 =head2 Renaming imported functions
 
-Short function names like C<Int> or C<String> are convenient, but 
-may cause name clashes with other modules. However, thanks to the 
-powerful features of L<Sub::Exporter>, these functions
-can be renamed in various ways. Here is an example :
+Short function names like C<Int>, C<String> or C<True> are convenient,
+but may cause name clashes with other modules. Thanks to the
+powerful features of L<Sub::Exporter>, these functions can be renamed
+in various ways. Here is an example :
 
   use Data::Domain -all => { -prefix => 'dom_' };
   my $domain = dom_Struct(
@@ -1272,44 +1290,39 @@ can be renamed in various ways. Here is an example :
     ...
   );
 
-See L<Sub::Exporter> for other examples of renaming imported functions.
+There are a number of other ways to rename imported functions; see
+L<Sub::Exporter> and L<Sub::Exporter::Tutorial>.
+
+=head2 Removing symbols from the import list
 
 To preserve backwards compatibility with L<Exporter>, the present
-module also supports "bang-syntax" to exclude some specific symbols
-from the import list : 
+module also supports exclamation marks to exclude some specific symbols
+from the import list. For example
 
   use Data::Domain qw/:all !Date/;
 
 will import everything except the C<Date> function.
 
 
-=head2 Smart match
 
-C<Data::Domain> overloads the smart match operator C<~~>,
-so one can write 
+=head1 METHODS COMMON TO ALL DOMAINS
 
-  if ($data ~~ $domain) {...}
-
-instead of 
-
-  if (!my $msg = $domain->inspect($data)) {...}
-
-The error message from the last smart match operation can be
-retrieved from C<$Data::Domain::MESSAGE>.
-
-=head2 Methods
-
-=head3 new
+=head2 new
 
 Creates a new domain object, from one of the domain constructors
-listed below (C<Num>, C<Int>, C<Date>, etc.). 
-The C<Data::Domain> class itself has no
-C<new> method, because it is an abstract class.
+listed below (C<Num>, C<Int>, C<Date>, etc.).  The C<Data::Domain>
+class itself has no C<new> method, because it is an abstract class.
+
+The C<new> method is seldom called explicitly; it is usually more
+convenient to use the wrapper subroutines introduced above, i.e. to
+write C<< Int(@args) >> instead of C<< Data::Domain::Int->new(@args) >>.
+All examples below will use this shorter notation.
 
 Arguments to the C<new> method specify various constraints for the
-domain (minimal/maximal values, regular expressions, etc.); most often
-they are specific to a given domain constructor, so see the details
-below. However, there are also some generic options :
+domain to be constructed (minimal/maximal values, regular expressions,
+etc.); most often they are specific to a given domain constructor, so
+they will be detailed later. However, there are also some generic
+options, valid for every domain constructor :
 
 =over
 
@@ -1321,7 +1334,7 @@ error message
 =item C<-name>
 
 defines a name for the domain, that will be printed in error
-messages instead of the subclass name. 
+messages instead of the subclass name.
 
 =item C<-messages>
 
@@ -1333,8 +1346,8 @@ as explained in the  L</"ERROR MESSAGES"> section.
 =back
 
 Option names always start with a dash. If no option name is given,
-parameters to the C<new> method are passed to the I<default option>,
-as defined in each constructor subclass. For example
+parameters to the C<new> method are passed to the I<default option>
+defined in each constructor subclass. For example
 the default option in  C<Data::Domain::List> is C<-items>, so 
 
    my $domain = List(Int, String, Int);
@@ -1343,12 +1356,15 @@ is equivalent to
 
    my $domain = List(-items => [Int, String, Int]);
 
+So the "default option" is syntactic sugar for using positional
+parameters instead of named parameters.
 
-=head3 inspect
+
+=head2 inspect
 
   my $messages = $domain->inspect($some_data);
 
-Inspects the supplied data, and returns an error message
+This method inspects the supplied data, and returns an error message
 (or a structured collection of messages) if anything is wrong.
 If the data successfully passed all domain tests, the method
 returns C<undef>.
@@ -1362,37 +1378,44 @@ for example
    aDate => "not a valid date",
    aList => ["message for item 0", undef, undef, "message for item 3"]}
 
-The client code can then exploit this structure to dispatch 
+The client code can then exploit this structure to dispatch
 error messages to appropriate locations (typically these
 will be the form fields that gathered the data).
+
+
+=head2 smart match
+
+C<Data::Domain> overloads the smart match operator C<~~>,
+so one can write 
+
+  if ($data ~~ $domain) {...}
+
+instead of 
+
+  if (!my $msg = $domain->inspect($data)) {...}
+
+The error message from the last smart match operation can be
+retrieved from C<$Data::Domain::MESSAGE>.
 
 
 
 
 =head1 BUILTIN DOMAIN CONSTRUCTORS
 
-B<Note> : each builtin domain constructor described in this chapter
-has its set of specific options, in addition to the generic options
-mentioned above in method L</new> (C<-optional>, C<-name> and
-C<-messages>).  Besides, some domains have a I<default option> which
-is syntactic sugar for using positional parameters instead of named
-parameters; see the L</String> and L</List> examples.
-
 =head2 Whatever
 
-  my $domain = Struct(
-    just_anything => Whatever,
-    is_defined    => Whatever(-defined => 1),
-    is_undef      => Whatever(-defined => 0),
-    is_true       => Whatever(-true => 1),
-    is_false      => Whatever(-true => 0),
-    is_of_class   => Whatever(-isa  => 'Some::Class'),
-    does_role     => Whatever(-does => 'Some::Role'),
-    has_methods   => Whatever(-can  => [qw/jump swim dance sing/]),
-  );
+  my $just_anything = Whatever;
+  my $is_defined    = Whatever(-defined => 1);
+  my $is_undef      = Whatever(-defined => 0);
+  my $is_true       = Whatever(-true => 1);
+  my $is_false      = Whatever(-true => 0);
+  my $is_of_class   = Whatever(-isa  => 'Some::Class');
+  my $does_role     = Whatever(-does => 'Some::Role');
+  my $has_methods   = Whatever(-can  => [qw/jump swim dance sing/]);
 
-Encapsulates just any kind of Perl value (including C<undef>). 
-Options are : 
+The C<Data::Domain::Whatever> domain can contain
+just any kind of Perl value (including C<undef>).
+Options are :
 
 =over
 
@@ -1423,9 +1446,8 @@ through L<Scalar::Does>.
 
 =head2 Empty
 
-Empty domain, that always fails when inspecting any data.
-This is sometimes useful within lazy constructors (see below),
-like in this example :
+The C<Data::Domain::Empty> domain always fails when inspecting any data.
+This is sometimes useful within lazy constructors, like in this example :
 
   Struct(
     foo => String,
@@ -1440,12 +1462,14 @@ like in this example :
     }
   )
 
+The L<"LAZY CONSTRUCTORS"|/"LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)">
+section gives more explanations about lazy domains.
 
 =head2 Num
 
   my $domain = Num(-range =>[-3.33, 999], -not_in => [2, 3, 5, 7, 11]);
 
-Domain for numbers (including floats). Numbers are 
+Domain for numbers (including floats). Numbers are
 recognized through L<Scalar::Util/looks_like_number>.
 Options for the domain are :
 
@@ -1478,25 +1502,22 @@ supplied as an arrayref.
 
   my $domain = Int(-min => 0, -max => 999, -not_in => [2, 3, 5, 7, 11]);
 
-Domain for integers. Integers are 
-recognized through the regular expression C</^-?\d+$/>.
-This domain accepts the same options as C<Num> and returns the 
-same error messages.
+Domain for integers. Integers are recognized through the regular
+expression C</^-?\d+$/>.  This domain accepts the same options as
+C<Num> and returns the same error messages.
 
 
 =head2 Date
 
-  Data::Domain::Date->parser('EU'); # default    
-  my $domain = Date(-min => '01.01.2001', 
+  Data::Domain::Date->parser('EU'); # default
+  my $domain = Date(-min => '01.01.2001',
                     -max => 'today',
                     -not_in => ['02.02.2002', '03.03.2003', 'yesterday']);
 
-Domain for dates, implemented via the 
-L<Date::Calc|Date::Calc> module. 
-By default, dates are parsed according to the 
-european format, i.e. through the 
-L<Decode_Date_EU|Date::Calc/Decode_Date_EU> method;
-this can be changed by setting 
+Domain for dates, implemented via the L<Date::Calc|Date::Calc> module.
+By default, dates are parsed according to the European format,
+i.e. through the L<Decode_Date_EU|Date::Calc/Decode_Date_EU> method;
+this can be changed by setting
 
   Data::Domain::Date->parser('US'); # will use Decode_Date_US
 
@@ -1507,10 +1528,10 @@ or
 
 When outputting error messages, dates will be printed 
 according to L<Date::Calc|Date::Calc>'s current language (english
-by default); see that module's documentation for changing 
+by default); see that module's documentation for changing
 the language.
 
-In the options below, the special keywords C<today>, 
+In the options below, the special keywords C<today>,
 C<yesterday> or C<tomorrow> may be used instead of a date
 constant, and will be replaced by the appropriate date
 when performing comparisons.
@@ -1545,9 +1566,9 @@ supplied as an arrayref.
 
 Domain for times in format C<hh:mm:ss> (minutes and seconds are optional).
 
-In the options below, the special keyword C<now> may be used instead of a 
-time, and will be replaced by the current local time
-when performing comparisons.
+In the options below, the special keyword C<now> may be used instead
+of a time, and will be replaced by the current local time when
+performing comparisons.
 
 =over
 
@@ -1561,7 +1582,7 @@ The data must be smaller or equal to the supplied value.
 
 =item -range
 
-C<< -range => [$min, $max] >> is equivalent to 
+C<< -range => [$min, $max] >> is equivalent to
 C<< -min => $min, -max => $max >>.
 
 =back
@@ -1573,7 +1594,7 @@ C<< -min => $min, -max => $max >>.
   my $domain = String(qr/^[A-Za-z0-9_\s]+$/);
 
   my $domain = String(-regex     => qr/^[A-Za-z0-9_\s]+$/,
-                      -antiregex => qr/$RE{profanity}/,    # see Regexp::Common
+                      -antiregex => qr/$RE{profanity}/,  # see Regexp::Common
                       -range     => ['AA', 'zz'],
                       -length    => [1, 20],
                       -not_in    => [qw/foo bar/]);
@@ -1585,8 +1606,8 @@ Domain for strings. Options are:
 
 =item -regex
 
-The data must match the supplied compiled regular expression. 
-Don't forget to put C<^> and C<$> anchors if you want your regex to check 
+The data must match the supplied compiled regular expression.  Don't
+forget to put C<^> and C<$> anchors if you want your regex to check
 the whole string.
 
 C<-regex> is the default option, so you may just pass the regex as a single
@@ -1606,7 +1627,7 @@ The data must be smaller or equal to the supplied value.
 
 =item -range
 
-C<< -range => [$min, $max] >> is equivalent to 
+C<< -range => [$min, $max] >> is equivalent to
 C<< -min => $min, -max => $max >>.
 
 =item -min_length
@@ -1619,7 +1640,7 @@ The string length must be smaller or equal to the supplied value.
 
 =item -length
 
-C<< -length => [$min, $max] >> is equivalent to 
+C<< -length => [$min, $max] >> is equivalent to
 C<< -min_length => $min, -max_length => $max >>.
 
 
@@ -1666,6 +1687,7 @@ the C<-optional> argument instead).
                     -any  => String(-min_length => 3),
                     -size => [3, 10]);
 
+  my $domain = List(-all => [String, Int, Whatever(-can => 'print')]);
 
 Domain for lists of values (stored as Perl arrayrefs).
 Options are:
@@ -1697,8 +1719,25 @@ C<< -min_size => $min, -max_size => $max >>.
 =item -all
 
 All remaining entries in the array, after the first I<n> entries
-as specified by the C<-items> option (if any), must satisfy that
-domain specification.
+as specified by the C<-items> option (if any), must satisfy the
+C<-all> specification. That specification can be
+
+=over
+
+=item *
+
+a single domain : in that case, all remaining items in the data must
+belong to that domain
+
+=item *
+
+an arrayref of domains : in that case, remaining items in the data
+are grouped into tuples, and each tuple must satisfy the specification.
+So the last example above says that the list must contain triples
+where the first item is a string, the second item is an integer
+and the third item is an object with a C<print> method.
+
+=back
 
 =item -any
 
@@ -1712,8 +1751,8 @@ The argument to C<-any> can also be an arrayref of domains, as in
    List(-any => [String(qr/^foo/), Num(-range => [1, 10]) ])
 
 This means that one member of the list must be a string
-starting with C<foo>, and one member of the list (in this case,
-necessarily another one) must be a number between 1 and 10.
+starting with C<foo>, and one member of the list
+must be a number between 1 and 10.
 Note that this is different from 
 
    List(-any => One_of(String(qr/^foo/), Num(-range => [1, 10]))
@@ -1739,19 +1778,19 @@ Options are:
 =item -fields
 
 Supplies a list of keys with their associated domains. The list might
-be given either as a hashref or as an arrayref. 
-Specifying it as an arrayref is useful for controlling 
-the order in which field checks will be performed;
-this may make a difference when there are context dependencies (see 
+be given either as a hashref or as an arrayref.  Specifying it as an
+arrayref is useful for controlling the order in which field checks
+will be performed; this may make a difference when there are context
+dependencies (see 
 L<"LAZY CONSTRUCTORS"|/"LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)"> below ).
 
 
 =item -exclude
 
-Specifies which keys are not allowed in the structure. The exclusion 
+Specifies which keys are not allowed in the structure. The exclusion
 may be specified as an arrayref of key names, as a compiled regular
-expression, or as the string constant 'C<*>' or 'C<all>' (meaning
-that no key will be allowed except those explicitly listed in the 
+expression, or as the string constant 'C<*>' or 'C<all>' (meaning that
+no key will be allowed except those explicitly listed in the
 C<-fields> option.
 
 =back
@@ -1772,7 +1811,7 @@ Options are:
 
 =item -options
 
-List of domains to be checked. This is the default option, so 
+List of domains to be checked. This is the default option, so
 the keyword may be omitted.
 
 =back
@@ -1790,20 +1829,60 @@ and requires that all of them succeed. Options are:
 
 =item -options
 
-List of domains to be checked. This is the default option, so 
+List of domains to be checked. This is the default option, so
 the keyword may be omitted.
 
 =back
 
+
+=head1 BUILTIN SHORTCUTS
+
+Below are the precise definition for the shortcut functions
+exported in the C<:shortcuts> group. Each of these functions
+sets some initial options, but also accepts further options as
+arguments, so for example it is possible to write something like
+C<< Obj(-does => 'Storable', -optional => 1) >>.
+
+=head2 True
+
+C<< Whatever(-true => 1) >>
+
+=head2 False
+
+C<< Whatever(-true => 0) >>
+
+=head2 Defined
+
+C<< Whatever(-defined => 1) >>
+
+=head2 Undef
+
+C<< Whatever(-defined => 0) >>
+
+=head2 Blessed
+
+C<< Whatever(-blessed => 1) >>
+
+=head2 Unblessed
+
+C<< Whatever(-blessed => 0) >>
+
+=head2 Obj
+
+C<< Whatever(-blessed => 1) >> (synonym to C<Blessed>)
+
+=head2 Class
+
+C<< Whatever(-blessed => 0, -isa => 'UNIVERSAL') >>
 
 
 =head1 LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)
 
 =head2 Principle
 
-If an element of a structured domain (C<List> or C<Struct>) depends on 
+If an element of a structured domain (C<List> or C<Struct>) depends on
 another element, then we need to I<lazily> construct the domain.
-Consider for example a struct in which the value of field C<date_end> 
+Consider for example a struct in which the value of field C<date_end>
 must be greater than C<date_begin> : 
 the subdomain for C<date_end> can only be constructed 
 when the argument to C<-min> is known, namely when
@@ -1828,7 +1907,7 @@ The supplied context is a hashref containing the following information:
 
 =item root
 
-the overall root of the inspected data 
+the overall root of the inspected data
 
 =item path
 
@@ -1864,7 +1943,7 @@ Here is an example :
   my $data = {foo => [undef, 99, {bar => "hello, world"}]};
   $domain->inspect($data);
 
-This code will print something like
+This code will print
 
   $VAR1 = {
     'root' => {'foo' => [undef, 99, {'bar' => 'hello, world'}]},
@@ -1877,7 +1956,7 @@ This code will print something like
   };
 
 
-=head2 Usage examples
+=head2 Examples of lazy domains
 
 =head3 Contextual sets
 
@@ -1899,7 +1978,7 @@ but also checks that the city actually belongs to the given country :
 
 =head3 Ordered lists
 
-Here is an example of a domain for ordered lists of integers:
+A domain for ordered lists of integers:
 
   my $domain = List(-all => sub {
       my $context = shift;
@@ -1908,11 +1987,14 @@ Here is an example of a domain for ordered lists of integers:
                          : Int(-min => $context->{list}[$index-1]);
     });
 
+The subdomain for the first item in the list has no specific
+constraint; but the next subdomains have a minimal bound that 
+comes from the previous list item.
 
-=head3 Recursive domains
+=head3 Recursive domain
 
 A domain for expression trees, where leaves are numbers,
-and intermediate nodes are binary operators on subtrees
+and intermediate nodes are binary operators on subtrees :
 
   my $expr_domain;
   $expr_domain = One_of(Num, Struct(operator => String(qr(^[-+*/]$)),
@@ -1950,14 +2032,14 @@ this is so that the client can still add its own arguments to the call,
 like
 
   $domain = Phone(-name     => 'private phone,
-                  -optional => 1, 
+                  -optional => 1,
                   -not_in   => [1234567]);
 
 
 =head1 CONSTANT SUBDOMAINS
 
 For convenience, elements of C<List()> or C<Struct()> may be plain
-scalar constants, and are translated into constant domains :
+scalar constants, and are automatically translated into constant domains :
 
   $domain = Struct(foo => 123,
                    bar => List(Int, 'buz', Int));
@@ -2219,17 +2301,6 @@ Some inspiration for C<Data::Domain> came from the wonderful
 L<Parse::RecDescent|Parse::RecDescent> module, especially
 the idea of passing a context where individual rules can grab
 information about neighbour nodes.
-
-
-=head1 TODO
-
-Ideas for extensions
-
-  - generate javascript validation code
-  - generate XML schema
-  - normalization / conversions (-filter option)
-  - msg callbacks (-filter_msg option)
-  - default values within domains ? (good idea ?)
 
 =head1 AUTHOR
 

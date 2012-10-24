@@ -12,7 +12,7 @@ my $builder = Module::Build->new(
       'Scalar::Util'  => 0,
       'List::Util'    => 0,
       'Date::Calc'    => 0,
-      'Scalar::Does'  => 0,
+      'Scalar::Does'  => 0.007,
       'Sub::Exporter' => 0,
       'Try::Tiny'     => 0,
      },
