@@ -1,7 +1,11 @@
 Revision history for Data-Domain
 
-  - better check of min/max values
 
+  - better check of min/max values
+  - revised documentation
+  - new shortcuts : 'Obj' and 'Class'
+  - changed names of export groups ('constructors' and 'shortcuts')
+  
 1.01 21.10.2012
   - removed internal domain _None (useless because same as 'Empty')
   - fiddle with Sub::Exporter to support use Data::Domain qw/:all !Date/   

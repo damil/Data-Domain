@@ -1496,8 +1496,6 @@ supplied as an arrayref.
 =back
 
 
-
-
 =head2 Int
 
   my $domain = Int(-min => 0, -max => 999, -not_in => [2, 3, 5, 7, 11]);
@@ -2099,15 +2097,14 @@ the message identifier as argument.
 
 Here is an example :
 
- sub Phone { 
-   String(-regex      => qr/^\+?[0-9() ]+$/, 
-          -min_length => 7,
-          -messages   => {
-            TOO_SHORT    => "phone number should have at least %d digits",
-            SHOULD_MATCH => "invalid chars in phone number",
-           }, @_);
- }
-
+  sub Phone { 
+    String(-regex      => qr/^\+?[0-9() ]+$/, 
+           -min_length => 7,
+           -messages   => {
+             TOO_SHORT    => "phone number should have at least %d digits",
+             SHOULD_MATCH => "invalid chars in phone number",
+            }, @_);
+  }
 
 
 
@@ -2304,7 +2301,7 @@ information about neighbour nodes.
 
 =head1 AUTHOR
 
-Laurent Dami, E<lt>dami@cpan.org<gt>
+Laurent Dami, E<lt>dami at cpan.org<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
