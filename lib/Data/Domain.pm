@@ -14,7 +14,8 @@ use overload '~~' => \&_matches, '""' => \&_stringify;
 
 our $VERSION = "1.02";
 
-our $MESSAGE; # global var for last message from ~~ (see '_matches')
+our $MESSAGE;        # global var for last message from ~~ (see '_matches')
+our $MAX_DEEP = 100; # limit for recursive calls to inspect()
 
 #----------------------------------------------------------------------
 # exports
@@ -291,6 +292,11 @@ sub _check_min_max {
 
 sub _build_subdomain {
   my ($self, $domain, $context) = @_;
+
+  # avoid infinite loop
+  @{$context->{path}} < $MAX_DEEP
+    or croak "inspect() deepness exceeded $MAX_DEEP; "
+           . "modify \$Data::Domain::MAX_DEEP if you need more";
 
   for ($domain) {
     when (does($_, 'Data::Domain')) {
@@ -1402,8 +1408,8 @@ for example
    aList => ["message for item 0", undef, undef, "message for item 3"]}
 
 The client code can then exploit this structure to dispatch
-error messages to appropriate locations (typically these
-will be the form fields that gathered the data).
+error messages to appropriate locations (like for example the form
+fields from which the data was gathered).
 
 
 =head2 smart match
@@ -2293,7 +2299,25 @@ the checked domains.
 
 =head1 INTERNALS
 
-=head2 node_from_path
+=head2 Variables
+
+=head3 MAX_DEEP
+
+In order to avoid infinite loops, the L</inspect> method will
+raise an exception if C<$MAX_DEEP> recursive calls were exceeded.
+The default limit is 100, but it can be changed like this :
+
+  local $Data::Domain::MAX_DEEP = 999;
+
+In that case you will probably want to also avoid warnings from
+the perl interpreter :
+
+  no warnings 'recursion';
+
+
+=head2 Methods
+
+=head3 node_from_path
 
   my $node = node_from_path($root, @path);
 
@@ -2302,21 +2326,21 @@ from the root and following a I<path> (a sequence of hash keys or
 array indices). Returns C<undef> if no such path exists in the tree.
 Mainly useful for contextual constraints in lazy constructors.
 
-=head2 msg
+=head3 msg
 
 Internal utility method for generating an error message.
 
-=head2 subclass
+=head3 subclass
 
 Method that returns the short name of the subclass of C<Data::Domain> (i.e.
 returns 'Int' for C<Data::Domain::Int>).
 
-=head2 _expand_range
+=head3 _expand_range
 
 Internal utility method for converting a "range" parameter
 into "min" and "max" parameters.
 
-=head2 _build_subdomain
+=head3 _build_subdomain
 
 Internal utility method for dynamically converting
 lazy domains (coderefs) into domains.

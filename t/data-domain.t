@@ -1,5 +1,6 @@
 #!perl
-
+use strict;
+use warnings;
 use Test::More tests => 18;
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
@@ -410,7 +411,7 @@ subtest "Overloads" => sub {
 #----------------------------------------------------------------------
 
 subtest "Lazy" => sub {
-  plan tests => 9;
+  plan tests => 10;
 
   $dom = Struct(
     d_begin => Date,
@@ -499,6 +500,12 @@ subtest "Lazy" => sub {
     right => {}
    }), "recursive fail");
 
+  # check $MAX_DEEP
+  my $infinite = {op => '+', left => 123};
+  $infinite->{right} = $infinite;
+  eval {$dom->inspect($infinite)};
+  my $err = $@;
+  like($err, qr/MAX_DEEP/, 'limited deepness');
 };
 
 
