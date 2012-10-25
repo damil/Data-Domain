@@ -10,10 +10,10 @@ my $msg;
 
 
 #----------------------------------------------------------------------
-# Builtins
+# Shortcuts
 #----------------------------------------------------------------------
-subtest "Builtins" => sub {
-  plan tests => 19;
+subtest "Shortcuts" => sub {
+  plan tests => 26;
 
   $dom = True;
   ok($dom->inspect(undef), "True / undef");
@@ -47,6 +47,19 @@ subtest "Builtins" => sub {
   $dom = Unblessed;
   ok($dom->inspect($dom), "Unblessed / obj");
   ok(!$dom->inspect(1),   "Unblessed / scalar");
+
+  $dom = Regexp;
+  ok($dom->inspect('foo'),          "Regexp / string");
+  ok(!$dom->inspect(qr/foo/),       "Regexp / regexp");
+
+  $dom = Obj;
+  ok($dom->inspect('Data::Domain'), "Obj / class");
+  ok(!$dom->inspect($dom),          "Obj / obj");
+
+  $dom = Class;
+  ok($dom->inspect($dom),            "Class / obj");
+  ok($dom->inspect('Foo'),           "Class / scalar");
+  ok(!$dom->inspect('Data::Domain'), "Class / class");
 
 };
 

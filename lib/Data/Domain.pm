@@ -21,22 +21,33 @@ our $MESSAGE; # global var for last message from ~~ (see '_matches')
 #----------------------------------------------------------------------
 
 # lists of symbols to export
-my @constructors;
-my @shortcuts;
+my @CONSTRUCTORS;
+my %SHORTCUTS;
+
 BEGIN {
-  @constructors = qw/Whatever Empty
+  @CONSTRUCTORS = qw/Whatever Empty
                      Num Int Date Time String
                      Enum List Struct One_of All_of/;
-  @shortcuts    = qw/True False Defined Undef Blessed Unblessed
-                     Obj Class/;
+  %SHORTCUTS = (
+    True      => [-true    => 1                     ],
+    False     => [-true    => 0                     ],
+    Defined   => [-defined => 1                     ],
+    Undef     => [-defined => 0                     ],
+    Blessed   => [-blessed => 1                     ],
+    Unblessed => [-blessed => 0                     ],
+    Regexp    => [-does    => 'Regexp'              ],
+    Obj       => [-blessed => 1                     ],
+    Class     => [-blessed => 0, -isa => 'UNIVERSAL'],
+  );
 }
 
 # setup exports through Sub::Exporter API
 use Sub::Exporter -setup => {
-  exports    => [ 'node_from_path', @shortcuts,
-                  map {$_ => \&_wrap_domain} @constructors],
-  groups     => { constructors => \@constructors,
-                  shortcuts    => \@shortcuts,  },
+  exports    => [ 'node_from_path', 
+                  (map {$_ => \&_wrap_domain          } @CONSTRUCTORS  ),
+                  (map {$_ => \&_wrap_shortcut_options} keys %SHORTCUTS) ],
+  groups     => { constructors => \@CONSTRUCTORS,
+                  shortcuts    => [keys %SHORTCUTS] },
   collectors => { INIT => \&_sub_exporter_init },
   installer  => \&_sub_exporter_installer,
 };
@@ -73,16 +84,14 @@ sub _wrap_domain {
   return sub {return "Data::Domain::$name"->new(@_)};
 }
 
-# shortcuts group : calling 'Whatever' with various pre-built options
-sub True      {Data::Domain::Whatever->new(-true    => 1, @_)}
-sub False     {Data::Domain::Whatever->new(-true    => 0, @_)}
-sub Defined   {Data::Domain::Whatever->new(-defined => 1, @_)}
-sub Undef     {Data::Domain::Whatever->new(-defined => 0, @_)}
-sub Blessed   {Data::Domain::Whatever->new(-blessed => 1, @_)}
-sub Unblessed {Data::Domain::Whatever->new(-blessed => 0, @_)}
-sub Obj       {Data::Domain::Whatever->new(-blessed => 1, @_)}
-sub Class     {Data::Domain::Whatever->new(-blessed => 0, 
-                                           -isa => 'UNIVERSAL', @_)}
+
+# # shortcuts group : calling 'Whatever' with various pre-built options
+sub _wrap_shortcut_options {
+  my ($class, $name, $args, $coll) = @_;
+  return sub {return Data::Domain::Whatever->new(@{$SHORTCUTS{$name}}, @_)};
+}
+
+
 
 #----------------------------------------------------------------------
 # messages
@@ -1281,7 +1290,7 @@ in L</"BUILTIN DOMAIN CONSTRUCTORS">.
   # or
   use Data::Domain qw/:shortcuts/;
   # or
-  use Data::Domain qw/True False Defined Undef Blessed Unblessed
+  use Data::Domain qw/True False Defined Undef Blessed Unblessed Regexp
                       Obj Class/;
 
 The C<:shortcuts> export group contains a number of convenience
@@ -1898,6 +1907,10 @@ C<< Whatever(-blessed => 1) >>
 =head2 Unblessed
 
 C<< Whatever(-blessed => 0) >>
+
+=head2 Regexp
+
+C<< Whatever(-does => 'Regexp') >>
 
 =head2 Obj
 
