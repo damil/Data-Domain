@@ -208,12 +208,13 @@ subtest "Time" => sub {
 # String
 #----------------------------------------------------------------------
 subtest "String" => sub {
-  plan tests => 14;
+  plan tests => 15;
 
   $dom = String;
-  ok($dom->inspect(undef),  "String / undef");
-  ok($dom->inspect({}),     "String / ref");
-  ok(!$dom->inspect("foo"), "String / ok");
+  ok($dom->inspect(undef),            "String / undef");
+  ok($dom->inspect({}),               "String / ref");
+  ok($dom->inspect(bless({}, 'Foo')), "String / objref");
+  ok(!$dom->inspect("foo"),           "String / ok");
   my $fake_string = FakeString->new(qw/a b c/); # FakeString : at end of file
   ok(!$dom->inspect($fake_string), "String / obj with stringification");
 
@@ -221,7 +222,6 @@ subtest "String" => sub {
   ok(!$dom->inspect("foo"), "String / regex");
   ok(!$dom->inspect("bar"), "String / regex");
   ok($dom->inspect("fail"), "String / regex");
-
 
 
   $dom = String(-regex      => qr/^foo/,

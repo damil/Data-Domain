@@ -3,9 +3,7 @@
 use Test::More tests => 4;
 use Data::Dumper;
 
-BEGIN {
-  use_ok( 'Data::Domain', qw/:all/ );
-}
+BEGIN { use_ok( 'Data::Domain', qw/:all/ ); }
 
 my $dom;
 
