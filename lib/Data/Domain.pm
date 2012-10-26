@@ -27,7 +27,7 @@ my %SHORTCUTS;
 
 BEGIN {
   @CONSTRUCTORS = qw/Whatever Empty
-                     Num Int Nat Date Time String
+                     Num Int Nat Date Time String Handle
                      Enum List Struct One_of All_of/;
   %SHORTCUTS = (
     True      => [-true    => 1                     ],
@@ -106,15 +106,18 @@ my $builtin_msgs = {
       TOO_SMALL     => "smaller than minimum '%s'",
       TOO_BIG       => "bigger than maximum '%s'",
       EXCLUSION_SET => "belongs to exclusion set",
-    },
-    Whatever => {
-      MATCH_DEFINED => "data defined/undefined",
       MATCH_TRUE    => "data true/false",
       MATCH_ISA     => "is not a '%s'",
       MATCH_CAN     => "does not have method '%s'",
       MATCH_DOES    => "does not do '%s'",
       MATCH_BLESSED => "data blessed/unblessed",
       MATCH_SMART   => "does not smart-match '%s'",
+      MATCH_ISWEAK  => "weak/strong reference",
+      MATCH_READONLY=> "readonly data",
+      MATCH_TAINTED => "tainted/untainted",
+    },
+    Whatever => {
+      MATCH_DEFINED => "data defined/undefined",
     },
     Num    => {INVALID => "invalid number",},
     Date   => {INVALID => "invalid date",},
@@ -124,7 +127,8 @@ my $builtin_msgs = {
       SHOULD_MATCH     => "should match '%s'",
       SHOULD_NOT_MATCH => "should not match '%s'",
     },
-    Enum => {NOT_IN_LIST => "not in enumeration list",},
+    Handle => {INVALID     => "is not an open filehandle"},
+    Enum   => {NOT_IN_LIST => "not in enumeration list",},
     List => {
       NOT_A_LIST => "is not an arrayref",
       TOO_SHORT  => "less than %d items",
@@ -144,15 +148,18 @@ my $builtin_msgs = {
       TOO_SMALL     => "plus petit que le minimum '%s'",
       TOO_BIG       => "plus grand que le maximum '%s'",
       EXCLUSION_SET => "fait partie des valeurs interdites",
-    },
-    Whatever => {
-      MATCH_DEFINED => "donnée définie/non définie",
       MATCH_TRUE    => "donnée vraie/fausse",
       MATCH_ISA     => "n'est pas un  '%s'",
       MATCH_CAN     => "n'a pas la méthode '%s'",
       MATCH_DOES    => "ne se comporte pas comme un '%s'",
       MATCH_BLESSED => "donnée blessed/unblessed",
       MATCH_SMART   => "n'obéit pas au smart-match '%s'",
+      MATCH_ISWEAK  => "référence weak/strong",
+      MATCH_READONLY=> "donnée readonly",
+      MATCH_TAINTED => "tainted/untainted",
+    },
+    Whatever => {
+      MATCH_DEFINED => "donnée définie/non définie",
     },
     Num    => {INVALID => "nombre incorrect",},
     Date   => {INVALID => "date incorrecte",},
@@ -162,7 +169,8 @@ my $builtin_msgs = {
       SHOULD_MATCH     => "devrait être reconnu par la regex '%s'",
       SHOULD_NOT_MATCH => "ne devrait pas être reconnu par la regex '%s'",
     },
-    Enum => {NOT_IN_LIST => "n'appartient pas à la liste énumérée",},
+    Handle => {INVALID     => "n'est pas une filehandle ouverte"},
+    Enum   => {NOT_IN_LIST => "n'appartient pas à la liste énumérée",},
     List => {
       NOT_A_LIST => "n'est pas une arrayref",
       TOO_SHORT  => "moins de %d éléments",
@@ -204,13 +212,61 @@ sub inspect {
   my ($self, $data, $context) = @_;
   no warnings 'recursion';
 
-  # call _inspect() if data is defined or if this is the 'Whatever' domain
-  return $self->_inspect($data, $context)
-    if defined($data) or $self->isa("Data::Domain::Whatever");
+  if (!defined $data) {
+    # success if data was optional;
+    return if $self->{-optional};
 
-  # otherwise, if data is undefined
-  return if $self->{-optional};                # optional domains always succeed
-  return $self->msg(UNDEFINED => '');          # otherwise : error
+    # only the 'Whatever' domain can accept undef; other domains will fail
+    return $self->msg(UNDEFINED => '')
+      unless $self->isa("Data::Domain::Whatever");
+  }
+  else { # if $data is defined
+    # check some general properties
+    if (my $isa = $self->{-isa}) {
+      eval {$data->isa($isa)}
+        or return $self->msg(MATCH_ISA => $isa);
+    }
+    if (my $role = $self->{-does}) {
+      does($data, $role)
+        or return $self->msg(MATCH_DOES => $role);
+    }
+    if (my $can = $self->{-can}) {
+      $can = [$can] unless does($can, 'ARRAY');
+      foreach my $method (@$can) {
+        eval {$data->can($method)}
+          or return $self->msg(MATCH_CAN => $method);
+      }
+    }
+    if (my $matches = $self->{-matches}) {
+      eval {$data ~~ $matches}
+        or return $self->msg(MATCH_SMART => $matches);
+    }
+    if (defined $self->{-blessed}) {
+      return $self->msg(MATCH_BLESSED => $self->{-blessed})
+        if Scalar::Util::blessed($data) xor $self->{-blessed};
+    }
+    if (defined $self->{-isweak}) {
+      return $self->msg(MATCH_ISWEAK => $self->{-isweak})
+        if Scalar::Util::isweak($data) xor $self->{-isweak};
+    }
+    if (defined $self->{-readonly}) {
+      return $self->msg(MATCH_READONLY => $self->{-readonly})
+        if Scalar::Util::readonly($data) xor $self->{-readonly};
+    }
+    if (defined $self->{-tainted}) {
+      return $self->msg(MATCH_TAINTED => $self->{-tainted})
+        if Scalar::Util::readonly($data) xor $self->{-tainted};
+    }
+  }
+
+  # the '-true' property must be checked against both defined and undef data
+  if (defined $self->{-true}) {
+    return $self->msg(MATCH_TRUE => $self->{-true})
+      if $data xor $self->{-true};
+  }
+
+  # now call domain-specific _inspect()
+  return $self->_inspect($data, $context)
 }
 
 #----------------------------------------------------------------------
@@ -339,7 +395,9 @@ sub _build_subdomain {
 #----------------------------------------------------------------------
 
 # valid options for all subclasses
-my @common_options = qw/-optional -name -messages/; 
+my @common_options = qw/-optional -name -messages
+                        -true -isa -can -does -matches
+                        -blessed -isweak -readonly -tainted/;
 
 sub _parse_args {
   my ($args_ref, $options_ref, $default_option, $arg_type) = @_;
@@ -348,7 +406,7 @@ sub _parse_args {
 
   # parse named arguments
   while (@$args_ref and $args_ref->[0] =~ /^-/) {
-    grep {$args_ref->[0] eq $_} (@$options_ref, @common_options)
+    $args_ref->[0] ~~ [@$options_ref, @common_options]
       or croak "invalid argument: $args_ref->[0]";
     my ($key, $val) = (shift @$args_ref, shift @$args_ref);
     $parsed{$key}  = $val;
@@ -411,7 +469,7 @@ our @ISA = 'Data::Domain';
 
 sub new {
   my $class   = shift;
-  my @options = qw/-defined -true -isa -can -does -blessed -matches/;
+  my @options = qw/-defined/;
   my $self    = Data::Domain::_parse_args( \@_, \@options );
   bless $self, $class;
 
@@ -424,40 +482,13 @@ sub new {
 sub _inspect {
   my ($self, $data) = @_;
 
-  return if $self->{-optional} and not defined($data);
-
   if (defined $self->{-defined}) {
     return $self->msg(MATCH_DEFINED => $self->{-defined})
       if defined($data) xor $self->{-defined};
   }
-  if (defined $self->{-true}) {
-    return $self->msg(MATCH_TRUE => $self->{-true})
-      if $data xor $self->{-true};
-  }
-  if (my $isa = $self->{-isa}) {
-    eval {$data->isa($isa)}
-      or return $self->msg(MATCH_ISA => $isa);
-  }
-  if (my $role = $self->{-does}) {
-    does($data, $role)
-      or return $self->msg(MATCH_DOES => $role);
-  }
-  if (my $can = $self->{-can}) {
-    $can = [$can] unless does($can, 'ARRAY');
-    foreach my $method (@$can) {
-      eval {$data->can($method)}
-        or return $self->msg(MATCH_CAN => $method);
-    }
-  }
-  if (defined $self->{-blessed}) {
-    return $self->msg(MATCH_BLESSED => $self->{-blessed})
-      if Scalar::Util::blessed($data) xor $self->{-blessed};
-  }
-  if (my $matches = $self->{-matches}) {
-    eval {$data ~~ $matches}
-      or return $self->msg(MATCH_SMART => $matches);
-  }
-  return;    # otherwise : no error message (that is, success!)
+
+  # otherwise, success
+  return;
 }
 
 
@@ -632,7 +663,6 @@ sub _inspect {
 
   return;
 }
-
 
 
 #======================================================================
@@ -855,6 +885,32 @@ sub _inspect {
 
   return;
 }
+
+
+
+#======================================================================
+package Data::Domain::Handle;
+#======================================================================
+use strict;
+use warnings;
+use Carp;
+our @ISA = 'Data::Domain';
+
+sub new {
+  my $class = shift;
+  my @options = ();
+  my $self = Data::Domain::_parse_args(\@_, \@options);
+  bless $self, $class;
+}
+
+sub _inspect {
+  my ($self, $data) = @_;
+  Scalar::Util::openhandle($data)
+    or return $self->msg(INVALID => '');
+
+  return; # otherwise OK, no error
+}
+
 
 
 
@@ -1196,6 +1252,7 @@ Data::Domain - Data description and validation
   my $nat_dom      = Nat(-max => 100); # natural numbers
   my $num_dom      = Num(-min => 3.33, -max => 18.5);
   my $string_dom   = String(-min_length => 2, -optional => 1);
+  my $handle_dom   = Handle;
   my $enum_dom     = Enum(qw/foo bar buz/);
   my $int_list_dom = List(-min_size => 1, -all => Int);
   my $mixed_list   = List(String, Int(-min => 0), Date, True, Defined);
@@ -1396,6 +1453,50 @@ defines ad hoc messages for that domain, instead of the builtin
 messages. The argument can be a string, a hashref or a coderef,
 as explained in the  L</"ERROR MESSAGES"> section.
 
+=item C<-true>
+
+If true, the data must be true. If false, the data must be false.
+
+=item C<-isa>
+
+The data must be an object or a subclass of the specified class;
+this is decided through C<< eval{$data->isa($class) >>.
+
+=item C<-can>
+
+The data must implement the listed methods, supplied either
+as an arrayref (several methods) or as a scalar (just one method);
+this is decided through C<< eval{$data->can($method) >>.
+
+=item C<-does>
+
+The data must "do" the supplied role; this is decided
+through L<Scalar::Does>.
+
+=item C<-matches>
+
+The data must smart match the supplied right operand
+(i.e. C<< $data ~~ $domain->{-matches} >>).
+
+
+=item C<-blessed>
+
+If true, the data must be blessed. If false, the data must be unblessed.
+
+=item C<-weak>
+
+If true, the data must be a weak reference. If false, the data must not be
+a weak reference.
+
+=item C<-readonly>
+
+If true, the data must be readonly (see L<Scalar::Util/readonly>). 
+If false, the data must not be readonly.
+
+=item C<-tainted>
+
+If true, the data must be tainted (see L<Scalar::Util/tainted>). 
+If false, the data must not be tainted.
 
 =back
 
@@ -1471,9 +1572,9 @@ logging purposes.
   my $does_role     = Whatever(-does => 'Some::Role');
   my $has_methods   = Whatever(-can  => [qw/jump swim dance sing/]);
 
-The C<Data::Domain::Whatever> domain can contain
-just any kind of Perl value (including C<undef>).
-Options are :
+The C<Data::Domain::Whatever> domain can contain any kind of Perl
+value, including C<undef> (actually this is the only domain that
+contains C<undef>). The only specific option is :
 
 =over
 
@@ -1481,27 +1582,10 @@ Options are :
 
 If true, the data must be defined. If false, the data must be undef.
 
-=item -true
-
-If true, the data must be true. If false, the data must be false.
-
-=item -isa
-
-The data must be an object or a subclass of the specified class;
-this is decided through C<< eval{$data->isa($class) >>.
-
-=item -can
-
-The data must implement the listed methods, supplied either
-as an arrayref (several methods) or as a scalar (just one method);
-this is decided through C<< eval{$data->can($method) >>.
-
-=item -does
-
-The data must "do" the supplied role; this is decided
-through L<Scalar::Does>.
-
 =back
+
+The C<Whatever> is mostly used together with some of the general
+options described above, like C<-true>, C<-does>, C<-can>, etc.
 
 
 =head2 Empty
@@ -1729,6 +1813,13 @@ supplied as an arrayref.
 
 =back
 
+
+=head2 Handle
+
+  my $domain = Handle();
+
+Domain for filehandles. This domain has no options.
+Domain membership is checked through L<Scalar::Util/openhandle>.
 
 
 =head2 Enum
@@ -2195,7 +2286,6 @@ Here is an example :
   }
 
 
-
 =head2 The C<messages> class method
 
 Default strings associated with message identifiers are stored in a
@@ -2388,7 +2478,7 @@ L<Jifty::DBI|Jifty::DBI>,
 L<Data::Constraint|Data::Constraint>,
 L<Declare::Constraints::Simple|Declare::Constraints::Simple>,
 L<Moose::Manual::Types>,
-L<Smart::Match>, L<Test::Deep>.
+L<Smart::Match>, L<Test::Deep>, L<Params::Validate>.
 Among those, C<Declare::Constraints::Simple> is the closest to
 C<Data::Domain>, because it is also designed to deal with
 substructures; yet it has a different approach to combinations

@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 
-use Test::More tests => 18;
+use Test::More tests => 19;
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
 diag( "Testing Data::Domain $Data::Domain::VERSION, Perl $], $^X" );
@@ -105,6 +105,8 @@ subtest "Whatever" => sub {
   $dom = Whatever(-matches => [qw/foo bar/]);
   ok(!$dom->inspect('foo'), "Whatever-matches /foo");
   ok($dom->inspect('buz'),  "Whatever-matches /buz");
+
+  # TODO : CHECK isweak, readonly, tainted
 };
 
 #----------------------------------------------------------------------
@@ -259,6 +261,20 @@ subtest "String" => sub {
 
   $dom = eval {String(-length => [5, 2])};
   ok(!$dom && $@ =~ m(min/max), "String invalid min/max length");
+};
+
+
+#----------------------------------------------------------------------
+# Handle
+#----------------------------------------------------------------------
+subtest "Handle" => sub {
+  plan tests => 3;
+
+  $dom = Handle;
+  ok(!$dom->inspect(*STDOUT),  "Handle/stdout 1");
+  ok(!$dom->inspect(\*STDOUT), "Handle/stdout 2");
+  ok($dom->inspect("STDOUT"),  "Handle/string");
+
 };
 
 

@@ -9,6 +9,7 @@ my $builder = Module::Build->new(
     dist_version_from   => 'lib/Data/Domain.pm',
     requires => {
       'perl'          => "5.010001",
+      'autouse'       => 0,
       'Scalar::Util'  => 0,
       'List::Util'    => 0,
       'Date::Calc'    => 0,

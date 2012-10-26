@@ -1,9 +1,9 @@
 Revision history for Data-Domain
 
-
+1.02 ??.10.2012
   - better check of min/max values
   - revised documentation
-  - new shortcuts : 'Obj' and 'Class'
+  - new shortcuts : 'Regexp', 'Obj' and 'Class'
   - changed names of export groups ('constructors' and 'shortcuts')
   
 1.01 21.10.2012
