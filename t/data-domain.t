@@ -1,6 +1,7 @@
 #!perl
 use strict;
 use warnings;
+
 use Test::More tests => 18;
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
@@ -148,17 +149,22 @@ subtest "Num" => sub {
 
 
 #----------------------------------------------------------------------
-# Int
+# Int & Nat
 #----------------------------------------------------------------------
 
-subtest "Int" => sub {
-  plan tests => 4;
+subtest "Int&Nat" => sub {
+  plan tests => 7;
 
   $dom = Int;
   ok(!$dom->inspect(1234), "Int / ok");
   ok(!$dom->inspect(-1234), "Int / ok");
   ok($dom->inspect(3.33), "Int / float");
   ok($dom->inspect(undef), "Int / undef");
+
+  $dom = Nat;
+  ok(!$dom->inspect(1234), "Nat / ok");
+  ok(!$dom->inspect(0),    "Nat / 0");
+  ok($dom->inspect(-1234), "Nat / negative num");
 };
 
 #----------------------------------------------------------------------

@@ -27,7 +27,7 @@ my %SHORTCUTS;
 
 BEGIN {
   @CONSTRUCTORS = qw/Whatever Empty
-                     Num Int Date Time String
+                     Num Int Nat Date Time String
                      Enum List Struct One_of All_of/;
   %SHORTCUTS = (
     True      => [-true    => 1                     ],
@@ -176,9 +176,10 @@ my $builtin_msgs = {
   },
 };
 
-# inherit Int messages from Num messages
+# inherit Int and Nat messages from Num messages
 foreach my $language (keys %$builtin_msgs) {
-  $builtin_msgs->{$language}{Int} = $builtin_msgs->{$language}{Num};
+  $builtin_msgs->{$language}{$_} = $builtin_msgs->{$language}{Num} 
+    for qw/Int Nat/;
 }
 
 # default messages : english
@@ -201,6 +202,7 @@ sub messages { # private class method
 
 sub inspect {
   my ($self, $data, $context) = @_;
+  no warnings 'recursion';
 
   # call _inspect() if data is defined or if this is the 'Whatever' domain
   return $self->_inspect($data, $context)
@@ -292,6 +294,7 @@ sub _check_min_max {
 
 sub _build_subdomain {
   my ($self, $domain, $context) = @_;
+  no warnings 'recursion';
 
   # avoid infinite loop
   @{$context->{path}} < $MAX_DEEP
@@ -543,6 +546,23 @@ sub _inspect {
   my ($self, $data) = @_;
 
   defined($data) and $data =~ /^-?\d+$/
+    or return $self->msg(INVALID => $data);
+  return $self->SUPER::_inspect($data);
+}
+
+
+#======================================================================
+package Data::Domain::Nat;
+#======================================================================
+use strict;
+use warnings;
+
+our @ISA = 'Data::Domain::Num';
+
+sub _inspect {
+  my ($self, $data) = @_;
+
+  defined($data) and $data =~ /^\d+$/
     or return $self->msg(INVALID => $data);
   return $self->SUPER::_inspect($data);
 }
@@ -916,6 +936,7 @@ sub new {
 
 sub _inspect {
   my ($self, $data, $context) = @_;
+  no warnings 'recursion';
 
   does($data, 'ARRAY')
     or return $self->msg(NOT_A_LIST => $data);
@@ -1044,6 +1065,7 @@ sub new {
 
 sub _inspect {
   my ($self, $data, $context) = @_;
+  no warnings 'recursion';
 
   # check that $data is a hashref
   does($data, 'HASH')
@@ -1108,6 +1130,7 @@ sub new {
 sub _inspect {
   my ($self, $data, $context) = @_;
   my @msgs;
+  no warnings 'recursion';
 
   for my $subdomain (@{$self->{-options}}) {
     my $msg = $subdomain->inspect($data, $context)
@@ -1142,6 +1165,7 @@ sub new {
 sub _inspect {
   my ($self, $data, $context) = @_;
   my @msgs;
+  no warnings 'recursion';
 
   for my $subdomain (@{$self->{-options}}) {
     my $msg = $subdomain->inspect($data, $context);
@@ -1169,6 +1193,7 @@ Data::Domain - Data description and validation
 
   # some basic domains
   my $int_dom      = Int(-min => 3, -max => 18);
+  my $nat_dom      = Nat(-max => 100); # natural numbers
   my $num_dom      = Num(-min => 3.33, -max => 18.5);
   my $string_dom   = String(-min_length => 2, -optional => 1);
   my $enum_dom     = Enum(qw/foo bar buz/);
@@ -1264,7 +1289,7 @@ are briefly listed in the L</"SEE ALSO"> section.
   use Data::Domain qw/:constructors/;
   # or
   use Data::Domain qw/Whatever Empty
-                      Num Int Date Time String
+                      Num Int Nat Date Time String
                       Enum List Struct One_of All_of/;
 
 Internally, domains are represented as Perl objects; however, it would
@@ -1533,10 +1558,20 @@ supplied as an arrayref.
 
 =head2 Int
 
-  my $domain = Int(-min => 0, -max => 999, -not_in => [2, 3, 5, 7, 11]);
+  my $domain = Int(-min => -999, -max => 999, -not_in => [2, 3, 5, 7, 11]);
 
 Domain for integers. Integers are recognized through the regular
 expression C</^-?\d+$/>.  This domain accepts the same options as
+C<Num> and returns the same error messages.
+
+
+=head2 Nat
+
+  my $domain = Nat(-max => 999);
+
+Domain for natural numbers (i.e. positive integers).
+Natural numbers are recognized through the regular
+expression C</^\d+$/>.  This domain accepts the same options as
 C<Num> and returns the same error messages.
 
 
@@ -2308,12 +2343,6 @@ raise an exception if C<$MAX_DEEP> recursive calls were exceeded.
 The default limit is 100, but it can be changed like this :
 
   local $Data::Domain::MAX_DEEP = 999;
-
-In that case you will probably want to also avoid warnings from
-the perl interpreter :
-
-  no warnings 'recursion';
-
 
 =head2 Methods
 
