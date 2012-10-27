@@ -1,11 +1,16 @@
 Revision history for Data-Domain
 
-1.02 ??.10.2012
+1.02 27.10.2012
   - better check of min/max values
   - revised documentation
-  - new shortcuts : 'Regexp', 'Obj' and 'Class'
+  - new options :  -ref, -isweak, -readonly, -tainted
+  - most options moved to parent inspect() -- now they apply to all domains
+  - new domains : 'Nat', 'Handle'
+  - new shortcuts : 'Regexp', 'Obj', 'Class', 'Ref', 'Unref'
   - changed names of export groups ('constructors' and 'shortcuts')
-  
+  - experimental support for checking method calls and coderef calls
+  - added $MAX_DEEP to control the recursion level 
+
 1.01 21.10.2012
   - removed internal domain _None (useless because same as 'Empty')
   - fiddle with Sub::Exporter to support use Data::Domain qw/:all !Date/   
