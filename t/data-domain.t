@@ -15,7 +15,7 @@ my $msg;
 # Shortcuts
 #----------------------------------------------------------------------
 subtest "Shortcuts" => sub {
-  plan tests => 26;
+  plan tests => 32;
 
   $dom = True;
   ok($dom->inspect(undef), "True / undef");
@@ -62,6 +62,16 @@ subtest "Shortcuts" => sub {
   ok($dom->inspect($dom),            "Class / obj");
   ok($dom->inspect('Foo'),           "Class / scalar");
   ok(!$dom->inspect('Data::Domain'), "Class / class");
+
+  $dom = Ref;
+  ok(!$dom->inspect({}),              "Ref / ref");
+  ok($dom->inspect('Foo'),            "Ref / scalar");
+  ok($dom->inspect(undef),            "Ref / undef");
+
+  $dom = Unref;
+  ok($dom->inspect({}),               "Unref / ref");
+  ok(!$dom->inspect('Foo'),           "Unref / scalar");
+  ok(!$dom->inspect(undef),           "Unref / undef");
 
 };
 

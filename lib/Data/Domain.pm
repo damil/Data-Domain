@@ -9,7 +9,7 @@ use Data::Dumper;
 use Scalar::Does 0.007;
 use Scalar::Util ();
 use Try::Tiny;
-use List::MoreUtils qw/part/;
+use List::MoreUtils qw/part natatime/;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
 our $VERSION = "1.02";
@@ -36,6 +36,8 @@ BEGIN {
     Undef     => [-defined => 0                     ],
     Blessed   => [-blessed => 1                     ],
     Unblessed => [-blessed => 0                     ],
+    Ref       => [-ref     => 1                     ],
+    Unref     => [-ref     => 0                     ],
     Regexp    => [-does    => 'Regexp'              ],
     Obj       => [-blessed => 1                     ],
     Class     => [-blessed => 0, -isa => 'UNIVERSAL'],
@@ -111,6 +113,7 @@ my $builtin_msgs = {
       MATCH_CAN     => "does not have method '%s'",
       MATCH_DOES    => "does not do '%s'",
       MATCH_BLESSED => "data blessed/unblessed",
+      MATCH_REF     => "is/is not a reference",
       MATCH_SMART   => "does not smart-match '%s'",
       MATCH_ISWEAK  => "weak/strong reference",
       MATCH_READONLY=> "readonly data",
@@ -153,6 +156,7 @@ my $builtin_msgs = {
       MATCH_CAN     => "n'a pas la méthode '%s'",
       MATCH_DOES    => "ne se comporte pas comme un '%s'",
       MATCH_BLESSED => "donnée blessed/unblessed",
+      MATCH_REF     => "est/n'est pas une référence",
       MATCH_SMART   => "n'obéit pas au smart-match '%s'",
       MATCH_ISWEAK  => "référence weak/strong",
       MATCH_READONLY=> "donnée readonly",
@@ -223,7 +227,7 @@ sub inspect {
   else { # if $data is defined
     # check some general properties
     if (my $isa = $self->{-isa}) {
-      eval {$data->isa($isa)}
+      try {$data->isa($isa)}
         or return $self->msg(MATCH_ISA => $isa);
     }
     if (my $role = $self->{-does}) {
@@ -233,13 +237,18 @@ sub inspect {
     if (my $can = $self->{-can}) {
       $can = [$can] unless does($can, 'ARRAY');
       foreach my $method (@$can) {
-        eval {$data->can($method)}
+        try {$data->can($method)}
           or return $self->msg(MATCH_CAN => $method);
       }
     }
     if (my $matches = $self->{-matches}) {
-      eval {$data ~~ $matches}
+      try {$data ~~ $matches}
         or return $self->msg(MATCH_SMART => $matches);
+    }
+    if ($self->{-has}) {
+      # EXPERIMENTAL: check methods results
+      my @msgs = $self->_check_has($data, $context);
+      return {HAS => \@msgs} if @msgs;
     }
     if (defined $self->{-blessed}) {
       return $self->msg(MATCH_BLESSED => $self->{-blessed})
@@ -259,15 +268,73 @@ sub inspect {
     }
   }
 
-  # the '-true' property must be checked against both defined and undef data
+  # properties that must be checked against both defined and undef data
   if (defined $self->{-true}) {
     return $self->msg(MATCH_TRUE => $self->{-true})
       if $data xor $self->{-true};
+  }
+  if (defined $self->{-ref}) {
+    return $self->msg(MATCH_REF => $self->{-ref})
+      if ref $data xor $self->{-ref};
   }
 
   # now call domain-specific _inspect()
   return $self->_inspect($data, $context)
 }
+
+
+sub _check_has {
+  my ($self, $data, $context) = @_;
+
+  my @msgs;
+  my $iterator = natatime 2, @{$self->{-has}};
+  while (my ($meth_to_call, $expectation) = $iterator->()) {
+    my ($meth, @args) = does($meth_to_call, 'ARRAY') ? @$meth_to_call
+                                                     : ($meth_to_call);
+    my $msg;
+    if (does($expectation, 'ARRAY')) {
+      $msg = try   {my @result = $data->$meth(@args);
+                    my $domain = List(@$expectation);
+                    $domain->inspect(\@result)}
+             catch {(my $error_msg = $_) =~ s/\bat\b.*//s; $error_msg};
+    }
+    else {
+      $msg = try   {my $result = $data->$meth(@args);
+                    $expectation->inspect($result)}
+             catch {(my $error_msg = $_) =~ s/\bat\b.*//s; $error_msg};
+    }
+    push @msgs, $meth_to_call => $msg if $msg;
+  }
+  return @msgs;
+}
+
+
+
+sub _check_returns {
+  my ($self, $data, $context) = @_;
+
+  my @msgs;
+  my $iterator = natatime 2, @{$self->{-returns}};
+  while (my ($args, $expectation) = $iterator->()) {
+    my $msg;
+    if (does($expectation, 'ARRAY')) {
+      $msg = try   {my @result = $data->(@$args);
+                    my $domain = List(@$expectation);
+                    $domain->inspect(\@result)}
+             catch {(my $error_msg = $_) =~ s/\bat\b.*//s; $error_msg};
+    }
+    else {
+      $msg = try   {my $result = $data->(@$args);
+                    $expectation->inspect($result)}
+             catch {(my $error_msg = $_) =~ s/\bat\b.*//s; $error_msg};
+    }
+    push @msgs, $args => $msg if $msg;
+  }
+  return @msgs;
+}
+
+
+
 
 #----------------------------------------------------------------------
 # METHODS FOR INTERNAL USE
@@ -396,7 +463,8 @@ sub _build_subdomain {
 
 # valid options for all subclasses
 my @common_options = qw/-optional -name -messages
-                        -true -isa -can -does -matches
+                        -true -isa -can -does -matches -ref
+                        -has -returns
                         -blessed -isweak -readonly -tainted/;
 
 sub _parse_args {
@@ -521,6 +589,7 @@ use strict;
 use warnings;
 use Carp;
 use Scalar::Util qw/looks_like_number/;
+use Try::Tiny;
 
 our @ISA = 'Data::Domain';
 
@@ -534,7 +603,7 @@ sub new {
   $self->_check_min_max(qw/-min -max <=/);
 
   if ($self->{-not_in}) {
-    eval {my $vals = $self->{-not_in};
+    try {my $vals = $self->{-not_in};
           @$vals > 0 and not grep {!looks_like_number($_)} @$vals}
       or croak "-not_in : needs an arrayref of numbers";
   }
@@ -671,6 +740,7 @@ package Data::Domain::Date;
 use strict;
 use warnings;
 use Carp;
+use Try::Tiny;
 our @ISA = 'Data::Domain';
 
 
@@ -750,9 +820,8 @@ sub new {
   # parse dates in the exclusion set into internal representation
   if ($self->{-not_in}) {
     my @excl_dates;
-    eval {
-      foreach my $date (@{$self->{-not_in}})
-      {
+    try {
+      foreach my $date (@{$self->{-not_in}}) {
         if ($date =~ $dynamic_date) {
           push @excl_dates, $date;
         }
@@ -774,7 +843,7 @@ sub new {
 sub _inspect {
   my ($self, $data) = @_;
 
-  my @date = eval {$date_parser->($data)};
+  my @date = try {$date_parser->($data)};
   @date && check_date(@date)
     or return $self->msg(INVALID => $data);
 
@@ -920,6 +989,7 @@ package Data::Domain::Enum;
 use strict;
 use warnings;
 use Carp;
+use Try::Tiny;
 our @ISA = 'Data::Domain';
 
 sub new {
@@ -928,7 +998,7 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options, -values => 'arrayref');
   bless $self, $class;
 
-  eval {@{$self->{-values}}} or croak "Enum : incorrect set of values";
+  try {@{$self->{-values}}} or croak "Enum : incorrect set of values";
 
   not grep {! defined $_} @{$self->{-values}}
     or croak "Enum : undefined element in values";
@@ -1080,8 +1150,6 @@ use warnings;
 use Carp;
 use Scalar::Does qw/does/;
 our @ISA = 'Data::Domain';
-
-# TODO: somehow keep the order of field names
 
 sub new {
   my $class = shift;
@@ -1429,81 +1497,11 @@ convenient to use the wrapper subroutines introduced above, i.e. to
 write C<< Int(@args) >> instead of C<< Data::Domain::Int->new(@args) >>.
 All examples below will use this shorter notation.
 
-Arguments to the C<new> method specify various constraints for the
-domain to be constructed (minimal/maximal values, regular expressions,
-etc.); most often they are specific to a given domain constructor, so
-they will be detailed later. However, there are also some generic
-options, valid for every domain constructor :
-
-=over
-
-=item C<-optional>
-
-if true, an C<undef> value will be accepted, without generating an
-error message
-
-=item C<-name>
-
-defines a name for the domain, that will be printed in error
-messages instead of the subclass name.
-
-=item C<-messages>
-
-defines ad hoc messages for that domain, instead of the builtin
-messages. The argument can be a string, a hashref or a coderef,
-as explained in the  L</"ERROR MESSAGES"> section.
-
-=item C<-true>
-
-If true, the data must be true. If false, the data must be false.
-
-=item C<-isa>
-
-The data must be an object or a subclass of the specified class;
-this is decided through C<< eval{$data->isa($class) >>.
-
-=item C<-can>
-
-The data must implement the listed methods, supplied either
-as an arrayref (several methods) or as a scalar (just one method);
-this is decided through C<< eval{$data->can($method) >>.
-
-=item C<-does>
-
-The data must "do" the supplied role; this is decided
-through L<Scalar::Does>.
-
-=item C<-matches>
-
-The data must smart match the supplied right operand
-(i.e. C<< $data ~~ $domain->{-matches} >>).
-
-
-=item C<-blessed>
-
-If true, the data must be blessed. If false, the data must be unblessed.
-
-=item C<-weak>
-
-If true, the data must be a weak reference. If false, the data must not be
-a weak reference.
-
-=item C<-readonly>
-
-If true, the data must be readonly (see L<Scalar::Util/readonly>). 
-If false, the data must not be readonly.
-
-=item C<-tainted>
-
-If true, the data must be tainted (see L<Scalar::Util/tainted>). 
-If false, the data must not be tainted.
-
-=back
-
-Option names always start with a dash. If no option name is given,
-parameters to the C<new> method are passed to the I<default option>
-defined in each constructor subclass. For example
-the default option in  C<Data::Domain::List> is C<-items>, so 
+Arguments to the C<new> method may specify various options for the
+domain to be constructed.  Option names always start with a dash. If
+no option name is given, parameters to the C<new> method are passed to
+the I<default option> defined in each constructor subclass. For
+example the default option in C<Data::Domain::List> is C<-items>, so
 
    my $domain = List(Int, String, Int);
 
@@ -1511,8 +1509,193 @@ is equivalent to
 
    my $domain = List(-items => [Int, String, Int]);
 
-So the "default option" is syntactic sugar for using positional
+So in short, the "default option" is syntactic sugar for using positional
 parameters instead of named parameters.
+
+Each domain constructor has its own list of available options; these will be
+presented below, together with each subclass (for example options for
+setting minimal/maximal values, regular expressions, string length,
+etc.).  However, there are also some generic options, available in
+every domain constructor; these are listed here, in several categories.
+
+=head3 Options for customizing the domain behaviour
+
+=over
+
+=item C<-optional>
+
+If true, the domain will accept C<undef>, without generating an
+error message.
+
+=item C<-name>
+
+Defines a name for the domain, that will be printed in error
+messages instead of the subclass name.
+
+=item C<-messages>
+
+Defines ad hoc messages for that domain, instead of the builtin
+messages. The argument can be a string, a hashref or a coderef,
+as explained in the  L</"CUSTOMIZING ERROR MESSAGES"> section.
+
+=back
+
+
+=head3 Options for checking boolean properties
+
+Options in this category check if the data possesses, or does not
+possess, a given property; hence, the argument to each option must be
+a boolean. For example, here is a domain that accepts all blessed
+objects that are not weak references and are not readonly :
+
+  $domain = Whatever(-blessed => 1, -weak => 0, -readonly => 0);
+
+Boolean property options are :
+
+=over
+
+=item C<-true>
+
+Checks if the data is true.
+
+=item C<-blessed>
+
+Checks if the data is blessed, according to L<Scalar::Util/blessed>.
+
+=item C<-ref>
+
+Checks if the data is a reference.
+
+=item C<-weak>
+
+Checks if the data is a weak reference, according to L<Scalar::Util/isweak>.
+
+=item C<-readonly>
+
+Checks if the data is readonly, according to L<Scalar::Util/readonly>.
+
+=item C<-tainted>
+
+Checks if the data is tainted, according to L<Scalar::Util/tainted>.
+
+=back
+
+
+=head3 Options for checking other general properties
+
+Options in this category do not take a boolean argument, but
+a class name, method name, role or smart match operand.
+
+=over
+
+=item C<-isa>
+
+Checks if the data is an object or a subclass of the specified class;
+this is checked through C<< eval {$data->isa($class)} >>.
+
+=item C<-can>
+
+Checks if the data implements the listed methods, supplied either
+as an arrayref (several methods) or as a scalar (just one method);
+this is checked through C<< eval {$data->can($method)} >>.
+
+=item C<-does>
+
+Checks if the data does the supplied role; this is checked
+through L<Scalar::Does>.
+
+=item C<-matches>
+
+Checks if the data smart matches the supplied right operand
+(i.e. C<< $data ~~ $domain->{-matches} >>).
+
+=back
+
+=head3 EXPERIMENTAL: options for checking return values
+
+B<Disclaimer>: options in this section are still experimental; the call 
+API or structure of returned values might change in future
+versions of C<Data::Domain>.
+
+These options call methods or coderefs within the data, and
+then check the results against the supplied domains. This is
+somehow contrary to the principle of "domains", because a function
+call or method call not only inspects the data : I<it might also
+alter the data>. However, one could also argue that peeking into
+an object's internals is contrary to the principle of encapsulation,
+so in this sense, method calls are more appropriate. You decide ...
+but beware of side-effects in your data!
+
+
+=over
+
+=item C<-has>
+
+  $domain = Obj(-has => [
+     foo          => String,               # ->foo() must return a String
+     foo          => [-all => String],     # ->foo() in list context must
+                                           # return a list of Strings
+     [bar => 123] => Obj(-can => 'print'), # ->bar(123) must return a printable obj
+   ]);
+
+The C<-has> option takes an arrayref argument; that arrayref must
+contain pairs of C<< ($method_spec => $expected_result) >>, where
+
+=over
+
+=item *
+
+C<$method_spec> is either a method name, or an arrayref containing
+the method name followed by the list of arguments for calling the method.
+
+=item *
+
+C<$expected_result> is either a domain, or an arrayref containing
+arguments for a C<< List(...) >> domain. In the former case, the method
+call will be performed in scalar context; in the latter case, it will
+be performed in list context, and the resulting list will be checked
+against a C<List> domain built from the given arguments.
+
+=back
+
+Note that this property can be invoked not only on C<Obj>, but on
+any domain; hence, it is possible to simultaneously check if an object
+has some given internal structure, and also answers to some method calls :
+
+  $domain = Struct(              # must be a hashref
+    -fields => {foo => String}   # must have a {foo} key with a String value
+    -has    => [foo => String],  # must have a ->foo method that returns a String
+   );
+
+
+=item C<-returns>
+
+  $domain = Whatever(-returns => [
+     []         => String,
+     [123, 456] => Int,
+   ]);
+
+The C<-returns> option treats the data as a coderef.
+It takes an arrayref argument; that arrayref must
+contain pairs of C<< ($call_spec => $expected_result) >>, where
+
+=over
+
+=item *
+
+C<$call_spec> is an arrayref containing
+the list of arguments for calling the subroutine.
+
+=item *
+
+C<$expected_result> is either a domain, or an arrayref containing
+arguments for a C<< List(...) >> domain. In the former case, the method
+call will be performed in scalar context; in the latter case, it will
+be performed in list context.
+
+=back
+
+=back
 
 
 =head2 inspect
@@ -2487,7 +2670,8 @@ of constraints and scope dependencies.
 Some inspiration for C<Data::Domain> came from the wonderful
 L<Parse::RecDescent|Parse::RecDescent> module, especially
 the idea of passing a context where individual rules can grab
-information about neighbour nodes.
+information about neighbour nodes. Ideas for some features were
+borrowed from L<Test::Deep> and from L<Moose::Manual::Types>.
 
 =head1 AUTHOR
 
