@@ -12,7 +12,7 @@ use Try::Tiny;
 use List::MoreUtils qw/part natatime/;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
-our $VERSION = "1.02";
+our $VERSION = "1.03";
 
 our $MESSAGE;        # global var for last message from ~~ (see '_matches')
 our $MAX_DEEP = 100; # limit for recursive calls to inspect()
@@ -30,17 +30,17 @@ BEGIN {
                      Num Int Nat Date Time String Handle
                      Enum List Struct One_of All_of/;
   %SHORTCUTS = (
-    True      => [-true    => 1                     ],
-    False     => [-true    => 0                     ],
-    Defined   => [-defined => 1                     ],
-    Undef     => [-defined => 0                     ],
-    Blessed   => [-blessed => 1                     ],
-    Unblessed => [-blessed => 0                     ],
-    Ref       => [-ref     => 1                     ],
-    Unref     => [-ref     => 0                     ],
-    Regexp    => [-does    => 'Regexp'              ],
-    Obj       => [-blessed => 1                     ],
-    Class     => [-blessed => 0, -isa => 'UNIVERSAL'],
+    True      => [ -true    => 1        ],
+    False     => [ -true    => 0        ],
+    Defined   => [ -defined => 1        ],
+    Undef     => [ -defined => 0        ],
+    Blessed   => [ -blessed => 1        ],
+    Unblessed => [ -blessed => 0        ],
+    Ref       => [ -ref     => 1        ],
+    Unref     => [ -ref     => 0        ],
+    Regexp    => [ -does    => 'Regexp' ],
+    Obj       => [ -blessed => 1        ],
+    Class     => [ -package => 1        ],
   );
 }
 
@@ -113,6 +113,7 @@ my $builtin_msgs = {
       MATCH_CAN     => "does not have method '%s'",
       MATCH_DOES    => "does not do '%s'",
       MATCH_BLESSED => "data blessed/unblessed",
+      MATCH_PACKAGE => "data is/is not a package",
       MATCH_REF     => "is/is not a reference",
       MATCH_SMART   => "does not smart-match '%s'",
       MATCH_ISWEAK  => "weak/strong reference",
@@ -156,6 +157,7 @@ my $builtin_msgs = {
       MATCH_CAN     => "n'a pas la méthode '%s'",
       MATCH_DOES    => "ne se comporte pas comme un '%s'",
       MATCH_BLESSED => "donnée blessed/unblessed",
+      MATCH_PACKAGE => "est/n'est pas un package",
       MATCH_REF     => "est/n'est pas une référence",
       MATCH_SMART   => "n'obéit pas au smart-match '%s'",
       MATCH_ISWEAK  => "référence weak/strong",
@@ -253,6 +255,10 @@ sub inspect {
     if (defined $self->{-blessed}) {
       return $self->msg(MATCH_BLESSED => $self->{-blessed})
         if Scalar::Util::blessed($data) xor $self->{-blessed};
+    }
+    if (defined $self->{-package}) {
+      return $self->msg(MATCH_PACKAGE => $self->{-package})
+        if (!ref($data) && $data->isa($data)) xor $self->{-package};
     }
     if (defined $self->{-isweak}) {
       return $self->msg(MATCH_ISWEAK => $self->{-isweak})
@@ -465,7 +471,7 @@ sub _build_subdomain {
 my @common_options = qw/-optional -name -messages
                         -true -isa -can -does -matches -ref
                         -has -returns
-                        -blessed -isweak -readonly -tainted/;
+                        -blessed -package -isweak -readonly -tainted/;
 
 sub _parse_args {
   my ($args_ref, $options_ref, $default_option, $arg_type) = @_;
@@ -674,7 +680,6 @@ package Data::Domain::String;
 use strict;
 use warnings;
 use Carp;
-use overload;
 our @ISA = 'Data::Domain';
 
 sub new {
@@ -698,8 +703,8 @@ sub new {
 sub _inspect {
   my ($self, $data) = @_;
 
-  # $data must be defined and scalar (or obj with a stringification method)
-  defined($data) && (!ref($data) || overload::Method($data, '""'))
+  # $data must be Unref or obj with a stringification method
+  !ref($data) || overload::Method($data, '""')
     or return $self->msg(INVALID => $data);
   if ($self->{-min_length}) {
     length($data) >= $self->{-min_length} 
@@ -1562,11 +1567,16 @@ Checks if the data is true.
 
 Checks if the data is blessed, according to L<Scalar::Util/blessed>.
 
+=item C<-package>
+
+Checks if the data is a package. This is considered true whenever
+the data is not a reference and satisfies C<< $data->isa($data) >>.
+
 =item C<-ref>
 
 Checks if the data is a reference.
 
-=item C<-weak>
+=item C<-isweak>
 
 Checks if the data is a weak reference, according to L<Scalar::Util/isweak>.
 
