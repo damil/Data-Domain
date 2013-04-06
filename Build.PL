@@ -21,6 +21,11 @@ my $builder = Module::Build->new(
       'Test::More'   => 0,
     },
     add_to_cleanup      => [ 'Data-Domain-*' ],
+    meta_merge => {
+      resources => {
+        repository => 'https://github.com/damil/Data-Domain',
+       }
+     },
 );
 
 $builder->create_build_script();
