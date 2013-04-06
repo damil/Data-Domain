@@ -2671,7 +2671,9 @@ L<Jifty::DBI|Jifty::DBI>,
 L<Data::Constraint|Data::Constraint>,
 L<Declare::Constraints::Simple|Declare::Constraints::Simple>,
 L<Moose::Manual::Types>,
-L<Smart::Match>, L<Test::Deep>, L<Params::Validate>.
+L<Smart::Match>, L<Test::Deep>, L<Params::Validate>,
+L<Validation::Class>.
+
 Among those, C<Declare::Constraints::Simple> is the closest to
 C<Data::Domain>, because it is also designed to deal with
 substructures; yet it has a different approach to combinations
