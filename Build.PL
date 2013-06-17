@@ -10,6 +10,7 @@ my $builder = Module::Build->new(
     requires => {
       'perl'          => "5.010001",
       'autouse'       => 0,
+      'experimental'  => 0,
       'Scalar::Util'  => 0,
       'List::Util'    => 0,
       'Date::Calc'    => 0,

@@ -1,5 +1,9 @@
 Revision history for Data-Domain
 
+
+1.04 16.06.2013
+  - use experimental 'smartmatch' to avoid warnings from perl 5.18 
+
 1.03 01.12.2012
   - fixed definition of 'Class' and added new option "-package"
 

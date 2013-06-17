@@ -4,6 +4,7 @@ package Data::Domain; # documentation at end of file
 use 5.010;
 use strict;
 use warnings;
+use experimental 'smartmatch';
 use Carp;
 use Data::Dumper;
 use Scalar::Does 0.007;
@@ -12,7 +13,7 @@ use Try::Tiny;
 use List::MoreUtils qw/part natatime/;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
-our $VERSION = "1.03";
+our $VERSION = "1.04";
 
 our $MESSAGE;        # global var for last message from ~~ (see '_matches')
 our $MAX_DEEP = 100; # limit for recursive calls to inspect()
@@ -1152,6 +1153,7 @@ package Data::Domain::Struct;
 #======================================================================
 use strict;
 use warnings;
+use experimental 'smartmatch';
 use Carp;
 use Scalar::Does qw/does/;
 our @ISA = 'Data::Domain';
