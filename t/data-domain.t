@@ -51,12 +51,12 @@ subtest "Shortcuts" => sub {
   ok(!$dom->inspect(1),   "Unblessed / scalar");
 
   $dom = Regexp;
-  ok($dom->inspect('foo'),          "Regexp / string");
-  ok(!$dom->inspect(qr/foo/),       "Regexp / regexp");
+  ok($dom->inspect('foo'),           "Regexp / string");
+  ok(!$dom->inspect(qr/foo/),        "Regexp / regexp");
 
   $dom = Obj;
-  ok($dom->inspect('Data::Domain'), "Obj / class");
-  ok(!$dom->inspect($dom),          "Obj / obj");
+  ok($dom->inspect('Data::Domain'),  "Obj / class");
+  ok(!$dom->inspect($dom),           "Obj / obj");
 
   $dom = Class;
   ok($dom->inspect($dom),            "Class / obj");
@@ -64,14 +64,14 @@ subtest "Shortcuts" => sub {
   ok(!$dom->inspect('Data::Domain'), "Class / class");
 
   $dom = Ref;
-  ok(!$dom->inspect({}),              "Ref / ref");
-  ok($dom->inspect('Foo'),            "Ref / scalar");
-  ok($dom->inspect(undef),            "Ref / undef");
+  ok(!$dom->inspect({}),             "Ref / ref");
+  ok($dom->inspect('Foo'),           "Ref / scalar");
+  ok($dom->inspect(undef),           "Ref / undef");
 
   $dom = Unref;
-  ok($dom->inspect({}),               "Unref / ref");
-  ok(!$dom->inspect('Foo'),           "Unref / scalar");
-  ok(!$dom->inspect(undef),           "Unref / undef");
+  ok($dom->inspect({}),              "Unref / ref");
+  ok(!$dom->inspect('Foo'),          "Unref / scalar");
+  ok(!$dom->inspect(undef),          "Unref / undef");
 
 };
 
@@ -359,7 +359,7 @@ subtest "List" => sub {
 #----------------------------------------------------------------------
 
 subtest "Struct" => sub {
-  plan tests => 17;
+  plan tests => 20;
 
   $dom = Struct;
   ok(!$dom->inspect({}), "Struct ok");
@@ -389,6 +389,13 @@ subtest "Struct" => sub {
   ok($dom->inspect({int => 3, foobar => 4}), "Struct foobar");
   ok($dom->inspect({int => 3, foo => 4}), "Struct foo");
   ok($dom->inspect({int => 3, other => 4}), "Struct other");
+
+
+  $dom = Struct(-keys   => List(-all => String(qr/^[abc]/)),
+                -values => List(-any => Int));
+  ok(!$dom->inspect({a => 123, b => 456}), "Struct -keys & -values");
+  ok($dom->inspect({x => 123, y => 456}), "Struct invalid key");
+  ok($dom->inspect({a => "foo", b => "bar"}), "Struct invalid value");
 };
 
 #----------------------------------------------------------------------

@@ -13,7 +13,7 @@ use Try::Tiny;
 use List::MoreUtils qw/part natatime/;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
-our $VERSION = "1.04";
+our $VERSION = "1.05";
 
 our $MESSAGE;        # global var for last message from ~~ (see '_matches')
 our $MAX_DEEP = 100; # limit for recursive calls to inspect()
@@ -1160,7 +1160,7 @@ our @ISA = 'Data::Domain';
 
 sub new {
   my $class = shift;
-  my @options = qw/-fields -exclude/;
+  my @options = qw/-fields -exclude -keys -values/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -fields => 'arrayref');
   bless $self, $class;
 
@@ -1185,9 +1185,19 @@ sub new {
     }
   }
 
+  # check that -exclude is an arrayref or a regex or a string
   if (my $exclude = $self->{-exclude}) {
     does($exclude, 'ARRAY') || does($exclude, 'Regexp') || !ref($exclude)
       or croak "invalid data for -exclude option";
+  }
+
+
+  # check that -keys or -values are List domains
+  for my $arg (qw/-keys -values/) {
+    if (my $dom = $self->{$arg}) {
+      does($dom, 'Data::Domain::List') or does($dom, 'CODE')
+        or croak "$arg in Data::Domain::Struct should be a List domain";
+    }
   }
 
   return $self;
@@ -1232,6 +1242,22 @@ sub _inspect {
     my $msg        = $subdomain->inspect($data->{$field}, $context);
     $msgs{$field}  = $msg if $msg;
     $has_invalid ||=  $msg;
+  }
+
+  # check the List domain for keys
+  if (my $keys_dom = $self->{-keys}) {
+    local $context->{path} = [@{$context->{path}}, "-keys"];
+    my $subdomain  = $self->_build_subdomain($keys_dom, $context);
+    $msgs{-keys}   = $subdomain->inspect([keys %$data], $context)
+      and $has_invalid = 1;
+  }
+
+  # check the List domain for values
+  if (my $values_dom = $self->{-values}) {
+    local $context->{path} = [@{$context->{path}}, "-values"];
+    my $subdomain  = $self->_build_subdomain($values_dom, $context);
+    $msgs{-values} = $subdomain->inspect([values %$data], $context)
+      and $has_invalid = 1;
   }
 
   return $has_invalid ? \%msgs : undef;
@@ -2131,9 +2157,12 @@ a string starting with C<foo> I<or> a number between 1 and 10.
 
   my $domain = Struct(foo => Int, bar => String);
   my $domain = Struct(-fields => {foo => Int, bar => String}); # same as above
-
+  
   my $domain = Struct(-fields  => [foo => Int, bar => String],
-                      -exclude => '*');
+                      -exclude => '*'); # only 'foo' and 'bar', nothing else
+  
+  my $domain = Struct(-keys   => List(-all => String(qr/^[abc])),
+                      -values => List(-all => Int));
 
 Domain for associative structures (stored as Perl hashrefs).
 Options are:
@@ -2158,9 +2187,15 @@ expression, or as the string constant 'C<*>' or 'C<all>' (meaning that
 no key will be allowed except those explicitly listed in the
 C<-fields> option.
 
+=item -keys
+
+Specifies a List domain, for inspecting the list of keys in the hash.
+
+=item -values
+
+Specifies a List domain, for inspecting the list of values in the hash.
+
 =back
-
-
 
 
 =head2 One_of

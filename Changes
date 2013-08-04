@@ -1,5 +1,7 @@
 Revision history for Data-Domain
 
+1.05 04.08.2013
+  - additional options -keys and -values for Struct
 
 1.04 16.06.2013
   - use experimental 'smartmatch' to avoid warnings from perl 5.18 
