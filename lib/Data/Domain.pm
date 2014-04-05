@@ -13,7 +13,7 @@ use Try::Tiny;
 use List::MoreUtils qw/part natatime/;
 use overload '~~' => \&_matches, '""' => \&_stringify;
 
-our $VERSION = "1.05";
+our $VERSION = "1.06";
 
 our $MESSAGE;        # global var for last message from ~~ (see '_matches')
 our $MAX_DEEP = 100; # limit for recursive calls to inspect()

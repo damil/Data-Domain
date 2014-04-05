@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+1.05 05.04.2014
+  - #94464 fix missing dependency on List::MoreUtils
+
 1.05 04.08.2013
   - additional options -keys and -values for Struct
 
