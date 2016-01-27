@@ -137,7 +137,7 @@ my $builtin_msgs = {
     List => {
       NOT_A_LIST => "is not an arrayref",
       TOO_SHORT  => "less than %d items",
-      TOO_LONG   => "more than %d its",
+      TOO_LONG   => "more than %d items",
       ANY        => "should have at least one '%s'",
     },
     Struct => {
