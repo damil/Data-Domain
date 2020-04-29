@@ -5,6 +5,7 @@ use 5.010;
 use strict;
 use warnings;
 use experimental 'smartmatch';
+use feature 'switch';
 use Carp;
 use Data::Dumper;
 use Scalar::Does 0.007;
