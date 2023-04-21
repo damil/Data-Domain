@@ -14,7 +14,7 @@ use if $] < 5.037, experimental => 'smartmatch';
 use overload '""' => \&_stringify, $] < 5.037 ? ('~~' => \&_matches) : ();
 use match::simple ();
 
-our $VERSION = "1.08";
+our $VERSION = "1.09";
 
 our $MESSAGE;        # global var for last message from _matches()
 our $MAX_DEEP = 100; # limit for recursive calls to inspect()
@@ -356,6 +356,10 @@ sub msg {
   my $name     = $self->{-name} || $subclass;
   my $msg;
 
+  # perl v5.22 and above warns if there are too many @args for sprintf.
+  # The line below prevents that warning
+  no if $] ge '5.022000', warnings => 'redundant';
+
   # if there is a user_defined message, return it
   if (defined $msgs) { 
     for (ref $msgs) {
@@ -374,10 +378,6 @@ sub msg {
   $msg = $global_msgs->{$subclass}{$msg_id}  # otherwise
       || $global_msgs->{Generic}{$msg_id}
      or croak "no error string for message $msg_id";
-
-  # perl v5.22 and above warns if there are too many @args for sprintf.
-  # The line below prevents that warning
-  no if $] ge '5.022000', warnings => 'redundant';
 
   return sprintf "$name: $msg", @args;
 }

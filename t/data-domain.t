@@ -559,7 +559,7 @@ subtest "Lazy" => sub {
 #----------------------------------------------------------------------
 
 subtest "messages" => sub {
-  plan tests => 6;
+  plan tests => 7;
 
   Data::Domain->messages("français");
 
@@ -596,7 +596,15 @@ subtest "messages" => sub {
   is($msg, "validation error (TOO_SMALL)", "msg global sub");
 
   Data::Domain->messages("english");
+
+  # with this test, sprintf will get a redundant arg. Needs "no warnings 'redundant'" to become silent
+  $dom = String(-regex    => qr/^\+?[0-9() ]+$/,
+                -messages => {SHOULD_MATCH => "illegal char"});
+  $msg = $dom->inspect("foobar");
+  is $msg, "String: illegal char", "message with redundant arg";
 };
+
+
 
 
 #----------------------------------------------------------------------
@@ -630,6 +638,11 @@ subtest "doc" => sub {
   ok($msg, "constant subdomains ERR2");
   note(explain($msg));
 };
+
+
+
+
+
 
 
 #----------------------------------------------------------------------
