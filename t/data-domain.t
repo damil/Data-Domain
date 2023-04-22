@@ -441,9 +441,14 @@ subtest "Overloads" => sub {
 
   SKIP: {
     skip "no smartmatch operator", 3 if $] >= 5.037;
-    ok(1 ~~ $dom,       "Smart match OK");
-    ok(!($dom ~~ $dom), "Smart match KO");
-    like($Data::Domain::MESSAGE, qr/blessed/, "Smart match message");
+    # This is in an eval to hide the ~~ from the compiler. Even with the skip,
+    # without the eval the compiler sees the ~~ and in 5.37.12 will emit
+    # deprecation warnings.
+    eval q{
+      ok(1 ~~ $dom,       "Smart match OK");
+      ok(!($dom ~~ $dom), "Smart match KO");
+      like($Data::Domain::MESSAGE, qr/blessed/, "Smart match message");
+    };
   }
 };
 
