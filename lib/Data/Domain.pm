@@ -9,9 +9,11 @@ use Data::Dumper;
 use Scalar::Does 0.007;
 use Scalar::Util ();
 use Try::Tiny;
+use Data::Reach     qw/reach/;
 use List::MoreUtils qw/part natatime any/;
-use if $] < 5.037, experimental => 'smartmatch';
-use overload '""' => \&_stringify, $] < 5.037 ? ('~~' => \&_matches) : ();
+use if $] < 5.037, experimental => 'smartmatch';      # smartmatch no longer experimental after 5.037
+use overload '""' => \&_stringify,
+             $] < 5.037 ? ('~~' => \&_matches) : ();  # fully deprecated, so cannot be overloaded
 use match::simple ();
 
 our $VERSION = "1.09";
@@ -22,6 +24,9 @@ our $MAX_DEEP = 100; # limit for recursive calls to inspect()
 #----------------------------------------------------------------------
 # exports
 #----------------------------------------------------------------------
+
+*node_from_path = \&reach; # for backwards compat
+
 
 # lists of symbols to export
 my @CONSTRUCTORS;
@@ -501,20 +506,6 @@ sub _parse_args {
   }
 
   return \%parsed;
-}
-
-
-sub node_from_path {
-  my ($root, $path0, @path) = @_;
-  return $root if not defined $path0;
-  return undef if not defined $root;
-  return node_from_path($root->{$path0}, @path) 
-    if does($root, 'HASH');
-  return node_from_path($root->[$path0], @path) 
-    if does($root, 'ARRAY');
-
-  # otherwise
-  croak "node_from_path: incorrect root/path";
 }
 
 
@@ -2702,6 +2693,10 @@ L<Parse::RecDescent|Parse::RecDescent> module, especially
 the idea of passing a context where individual rules can grab
 information about neighbour nodes. Ideas for some features were
 borrowed from L<Test::Deep> and from L<Moose::Manual::Types>.
+
+=head1 ACKNOWLEDGEMENTS
+
+Thanks to David Cantrell and Gabor Szabo for their help on issues related to smartmatch deprecation.
 
 =head1 AUTHOR
 

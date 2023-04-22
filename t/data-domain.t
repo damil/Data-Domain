@@ -433,7 +433,6 @@ subtest "All_of" => sub {
 
 subtest "Overloads" => sub {
   plan tests => 4;
-  use experimental 'smartmatch';
 
   $dom = Unblessed;
   my $string = "$dom";
@@ -441,10 +440,13 @@ subtest "Overloads" => sub {
 
   SKIP: {
     skip "no smartmatch operator", 3 if $] >= 5.037;
+
     # This is in an eval to hide the ~~ from the compiler. Even with the skip,
     # without the eval the compiler sees the ~~ and in 5.37.12 will emit
     # deprecation warnings.
     eval q{
+      no warnings 'experimental';
+      use experimental 'smartmatch';
       ok(1 ~~ $dom,       "Smart match OK");
       ok(!($dom ~~ $dom), "Smart match KO");
       like($Data::Domain::MESSAGE, qr/blessed/, "Smart match message");
