@@ -25,8 +25,7 @@ our $MAX_DEEP = 100; # limit for recursive calls to inspect()
 # exports
 #----------------------------------------------------------------------
 
-*node_from_path = \&reach; # for backwards compat
-
+sub node_from_path {warn "node_from_path is deprecated; use Data::Reach"; &reach} # for backwards compat
 
 # lists of symbols to export
 my @CONSTRUCTORS;
@@ -1416,9 +1415,10 @@ dependencies within the structure, and with several options to
 finely tune the error messages returned to the user.
 
 The main usage for C<Data::Domain> is to check input from forms in
-interactive applications : the structured error messages make it easy
-to display a form again, highlighting which fields were rejected and
-why. Another usage is for writing automatic tests, with the help of
+interactive applications : structured error messages give detailed
+information about which fields were rejected and why; this can be
+used to display a form again, highlighting the wrong fields.
+Another usage is for writing automatic tests, with the help of
 the companion module L<Test::InDomain>.
 
 There are several other packages in CPAN doing data validation; these
@@ -1456,7 +1456,7 @@ C<:constructors>, and allow us to write more compact code :
     ...
   );
 
-The list of available domain constructors will be expanded below
+The list of available domain constructors is expanded below
 in L</"BUILTIN DOMAIN CONSTRUCTORS">.
 
 =head2 Shortcuts (domains with predefined options)
@@ -1630,16 +1630,12 @@ through L<Scalar::Does>.
 
 =item C<-matches>
 
-Deprecated. Was used to check if the data smart matches the supplied right operand
-(i.e. C<< $data ~~ $domain->{-matches} >>).
+Was originally designed for the smart match operator in perl 5.10.
+Is now implemented through L<match::simple>.
 
 =back
 
-=head3 EXPERIMENTAL: options for checking return values
-
-B<Disclaimer>: options in this section are still experimental; the call 
-API or structure of returned values might change in future
-versions of C<Data::Domain>.
+=head3 Options for checking return values
 
 These options call methods or coderefs within the data, and
 then check the results against the supplied domains. This is
@@ -2291,8 +2287,9 @@ the overall root of the inspected data
 
 the sequence of keys or array indices that led to the current
 data node. With that information, the subdomain is able to jump
-to other ancestor or sibling data nodes within the tree (see also
-the L</node_from_path> helper function).
+to other ancestor or sibling data nodes within the tree
+(L<Data::Reach> is your friend for doing that).
+
 
 =item flat
 
@@ -2703,7 +2700,7 @@ Laurent Dami, E<lt>dami at cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006, 2007, 2012 by Laurent Dami.
+Copyright 2006, 2007, 2012, 2023 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself. 
+it under the same terms as Perl itself.
