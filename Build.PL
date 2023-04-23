@@ -20,9 +20,10 @@ my $builder = Module::Build->new(
       'Sub::Exporter'   => 0,
       'Try::Tiny'       => 0,
      },
-    build_requires => {
-      'Test::More'   => 0,
+    test_requires => {
+      'Test::More'       => 0,
       'Test::NoWarnings' => 0,
+      'Clone'            => 0,
     },
     add_to_cleanup      => [ 'Data-Domain-*' ],
     meta_merge => {

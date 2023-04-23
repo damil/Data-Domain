@@ -3,6 +3,8 @@ use strict;
 use warnings;
 use Test::More tests => 20;
 use Test::NoWarnings;
+use Clone qw/clone/;
+
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
 diag( "Testing Data::Domain $Data::Domain::VERSION, Perl $], $^X" );
@@ -474,19 +476,6 @@ subtest "Lazy" => sub {
 
   ok(!$dom->inspect({d_begin => '03.03.2003', 
                      d_end   => '02.02.2002'}), "Dates order fail");
-
-
-  sub clone { # can't remember which CPAN module implements cloning
-    my $node = shift;
-    for (ref $node) {
-      /ARRAY/ and return [map {clone($_)} @$node];
-      /HASH/  and do { my $r = {};
-                       $r->{$_} = clone($node->{$_}) foreach keys %$node;
-                       return $r; };
-      /^$/    and return $node;
-      die "cloning incorrect data";
-    }
-  }
 
   my $context;
   $dom = Struct(
