@@ -447,7 +447,7 @@ subtest "Overloads" => sub {
     # without the eval the compiler sees the ~~ and in 5.37.12 will emit
     # deprecation warnings.
     eval q{
-      no warnings 'experimental';
+      no if ($] >= 5.018), 'warnings' => 'experimental';
       use experimental 'smartmatch';
       ok(1 ~~ $dom,       "Smart match OK");
       ok(!($dom ~~ $dom), "Smart match KO");
