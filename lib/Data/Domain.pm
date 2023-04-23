@@ -16,7 +16,7 @@ use overload '""' => \&_stringify,
              $] < 5.037 ? ('~~' => \&_matches) : ();  # fully deprecated, so cannot be overloaded
 use match::simple ();
 
-our $VERSION = "1.09";
+our $VERSION = "1.10";
 
 our $MESSAGE;        # global var for last message from _matches()
 our $MAX_DEEP = 100; # limit for recursive calls to inspect()

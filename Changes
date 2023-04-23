@@ -1,8 +1,8 @@
 Revision history for Data-Domain
 
-
+1.10 23.04.2023
   - no longer use smartmatch for perl >= 5.37.10
-  - removed 'node_from_path', now implemented through Data::Reach
+  - removed 'node_from_path'; backwards compat through Data::Reach
 
 1.09 21.04.2023
   - fix one special case of warning 'redundant' that was omitted in the 1.07 fix
