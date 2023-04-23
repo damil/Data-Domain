@@ -11,7 +11,7 @@ my $builder = Module::Build->new(
       'perl'            => "5.010001",
       'autouse'         => 0,
       'experimental'    => 0,
-      'match::simple'   => 0, 'match::simple::XS' => 0,
+      'match::simple'   => 0,
       'Data::Reach'     => 0,
       'Date::Calc'      => 0,
       'List::MoreUtils' => 0,
@@ -20,7 +20,10 @@ my $builder = Module::Build->new(
       'Sub::Exporter'   => 0,
       'Try::Tiny'       => 0,
      },
-    test_requires => {
+    recommends => {
+      'match::simple::XS' => 0,
+    },
+    build_requires => {
       'Test::More'       => 0,
       'Test::NoWarnings' => 0,
       'Clone'            => 0,

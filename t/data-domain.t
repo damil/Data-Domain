@@ -452,7 +452,7 @@ subtest "Overloads" => sub {
       ok(1 ~~ $dom,       "Smart match OK");
       ok(!($dom ~~ $dom), "Smart match KO");
       like($Data::Domain::MESSAGE, qr/blessed/, "Smart match message");
-    };
+    } or die $@;
   }
 };
 
