@@ -1146,7 +1146,6 @@ package Data::Domain::Struct;
 #======================================================================
 use strict;
 use warnings;
-use experimental 'smartmatch';
 use Carp;
 use Scalar::Does qw/does/;
 our @ISA = 'Data::Domain';
