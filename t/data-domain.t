@@ -7,7 +7,7 @@ use Clone qw/clone/;
 
 
 BEGIN { use_ok( 'Data::Domain', qw/:all/ );}
-diag( "Testing Data::Domain $Data::Domain::VERSION, Perl $], $^X" );
+diag( "Testing Data::Domain $Data::Domain::VERSION, Perl $], Test::More $Test::More::VERSION, $^X" );
 
 my $dom;
 my $msg;

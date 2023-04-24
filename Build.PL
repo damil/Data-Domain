@@ -23,7 +23,7 @@ my $builder = Module::Build->new(
       'match::simple::XS' => 0,
     },
     build_requires => {
-      'Test::More'       => 0,
+      'Test::More'       => 1.3092194,
       'Test::NoWarnings' => 0,
       'Clone'            => 0,
     },
