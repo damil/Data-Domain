@@ -16,8 +16,11 @@ jobs:
         perl: [ '5.10', '5.12', '5.14', '5.30', '5.36' ]
         exclude:
           - runner: windows-latest
-            perl: [ '5.10', '5.12', '5.36' ]
-
+            perl: '5.10'
+          - runner: windows-latest
+            perl: '5.12'
+          - runner: windows-latest
+            perl: '5.36'
     runs-on: ${{matrix.runner}}
     name: OS ${{matrix.runner}} Perl ${{matrix.perl}}
 
