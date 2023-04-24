@@ -9,7 +9,6 @@ use Data::Dumper;
 use Scalar::Does 0.007;
 use Scalar::Util ();
 use Try::Tiny;
-use Data::Reach     qw/reach/;
 use List::MoreUtils qw/part natatime any/;
 use if $] < 5.037, experimental => 'smartmatch';      # smartmatch no longer experimental after 5.037
 use overload '""' => \&_stringify,
@@ -24,8 +23,6 @@ our $MAX_DEEP = 100; # limit for recursive calls to inspect()
 #----------------------------------------------------------------------
 # exports
 #----------------------------------------------------------------------
-
-sub node_from_path {warn "node_from_path is deprecated; use Data::Reach"; &reach} # for backwards compat
 
 # lists of symbols to export
 my @CONSTRUCTORS;
@@ -52,7 +49,7 @@ BEGIN {
 
 # setup exports through Sub::Exporter API
 use Sub::Exporter -setup => {
-  exports    => [ 'node_from_path', 
+  exports    => [ 'node_from_path',                                          # no longer documented, but still present for backwards compat
                   (map {$_ => \&_wrap_domain          } @CONSTRUCTORS  ),
                   (map {$_ => \&_wrap_shortcut_options} keys %SHORTCUTS) ],
   groups     => { constructors => \@CONSTRUCTORS,
@@ -507,6 +504,19 @@ sub _parse_args {
   return \%parsed;
 }
 
+
+sub node_from_path { # no longer documented, but still present for backwards compat
+  my ($root, $path0, @path) = @_;
+  return $root if not defined $path0;
+  return undef if not defined $root;
+  return node_from_path($root->{$path0}, @path) 
+    if does($root, 'HASH');
+  return node_from_path($root->[$path0], @path) 
+    if does($root, 'ARRAY');
+
+  # otherwise
+  croak "node_from_path: incorrect root/path";
+}
 
 #----------------------------------------------------------------------
 # implementation for overloaded operators
@@ -2634,7 +2644,7 @@ The default limit is 100, but it can be changed like this :
 
 =head2 Methods
 
-=head3 node_from_path
+=head3 node_from_path (DEPRECATED)
 
   my $node = node_from_path($root, @path);
 
@@ -2642,6 +2652,8 @@ Convenience function to find a given node in a data tree, starting
 from the root and following a I<path> (a sequence of hash keys or
 array indices). Returns C<undef> if no such path exists in the tree.
 Mainly useful for contextual constraints in lazy constructors.
+Now superseded by L<Data::Reach>.
+
 
 =head3 msg
 

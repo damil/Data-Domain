@@ -12,7 +12,6 @@ my $builder = Module::Build->new(
       'autouse'         => 0,
       'experimental'    => 0,
       'match::simple'   => 0,
-      'Data::Reach'     => 0,
       'Date::Calc'      => 0,
       'List::MoreUtils' => 0,
       'Scalar::Does'    => 0.007,
