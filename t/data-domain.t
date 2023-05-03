@@ -391,7 +391,11 @@ subtest "Struct" => sub {
   ok($dom->inspect({int => 3, foobar => 4}), "Struct foobar");
   ok($dom->inspect({int => 3, foo => 4}), "Struct foo");
   ok($dom->inspect({int => 3, other => 4}), "Struct other");
-
+  my $err = $dom->inspect({int => 3, other => 4, more => 5});
+  ok(ref $err eq 'HASH', "Error is a HASH ref");
+  ok(scalar keys $err->%* == 2, "found 2 Error messages");
+  ok(exists $err->{other}, "Error for field 'other' exists");
+  ok(exists $err->{more}, "Error for field 'more' exists");
 
   $dom = Struct(-keys   => List(-all => String(qr/^[abc]/)),
                 -values => List(-any => Int));
