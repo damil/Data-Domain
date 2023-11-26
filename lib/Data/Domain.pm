@@ -49,7 +49,7 @@ BEGIN {
 
 # setup exports through Sub::Exporter API
 use Sub::Exporter -setup => {
-  exports    => [ 'node_from_path',                                          # no longer documented, but still present for backwards compat
+  exports    => [ 'node_from_path',                                          # no longer used, but still present for backwards compat
                   (map {$_ => \&_wrap_domain          } @CONSTRUCTORS  ),
                   (map {$_ => \&_wrap_shortcut_options} keys %SHORTCUTS) ],
   groups     => { constructors => \@CONSTRUCTORS,
@@ -442,12 +442,11 @@ sub _build_subdomain {
   elsif (does($domain, 'CODE')) {
     # this is a lazy domain, need to call the coderef to get a real domain
     $domain = try   {$domain->($context)} 
-      catch {   # remove "at source_file, line ..." from error message
-        (my $error_msg = $_) =~ s/\bat\b.*//s;
-        # return an empty domain that reports the error message
-        Data::Domain::Empty->new(-name => "domain parameters",
-                                 -messages => $error_msg);
-      };
+              catch {(my $error_msg = $_) =~ s/\bat\b.*//s; # remove "at source_file, line ..." from error message
+                     # return an empty domain that reports the error message
+                     Data::Domain::Empty->new(-name     => "domain parameters",
+                                              -messages => $error_msg);
+                   };
     # did we really get a domain ?
     does($domain, "Data::Domain")
       or croak "lazy domain coderef returned an invalid domain";
@@ -465,6 +464,15 @@ sub _build_subdomain {
 
   return $domain;
 }
+
+
+sub _is_proper_subdomain {
+  my ($self, $domain) = @_;
+  return does($_, 'Data::Domain') || does($_, 'CODE') || !ref $_;
+}
+
+
+
 
 
 #----------------------------------------------------------------------
@@ -505,7 +513,7 @@ sub _parse_args {
 }
 
 
-sub node_from_path { # no longer documented, but still present for backwards compat
+sub node_from_path { # no longer used (replaced by Data::Reach); but still present for backwards compat
   my ($root, $path0, @path) = @_;
   return $root if not defined $path0;
   return undef if not defined $root;
@@ -1053,6 +1061,10 @@ sub new {
       croak "$bound does not match -items"
       if $self->{$bound} and $self->{$bound} < @{$self->{-items}};
     }
+
+    # check that all items are associated to proper subdomains
+    my @invalid_fields = grep {!$self->_is_proper_subdomain($self->{-items}[$_])} 0 .. $#{$self->{-items}};
+    croak "invalid subdomain for field: ", join ", ", @invalid_fields  if @invalid_fields;
   }
 
   # check that -all or -any are domains or lists of domains
@@ -1165,6 +1177,7 @@ sub new {
   my $self = Data::Domain::_parse_args(\@_, \@options, -fields => 'arrayref');
   bless $self, $class;
 
+  # parse the -fields option
   my $fields = $self->{-fields} || [];
   if (does($fields, 'ARRAY')) {
     # transform arrayref into hashref plus an ordered list of keys
@@ -1178,18 +1191,21 @@ sub new {
   }
   elsif (does($fields, 'HASH')) {
     # keep given hashref, add list of keys
-    $self->{-fields_list} = [keys %$fields];
+    $self->{-fields_list} = [sort keys %$fields];
   }
   else {
     croak "invalid data for -fields option";
   }
+
+  # check that all fields are associated to proper subdomains
+  my @invalid_fields = grep {!$self->_is_proper_subdomain($self->{-fields}{$_})} @{$self->{-fields_list}};
+  croak "invalid subdomain for field: ", join ", ", @invalid_fields  if @invalid_fields;
 
   # check that -exclude is an arrayref or a regex or a string
   if (my $exclude = $self->{-exclude}) {
     does($exclude, 'ARRAY') || does($exclude, 'Regexp') || !ref($exclude)
       or croak "invalid data for -exclude option";
   }
-
 
   # check that -keys or -values are List domains
   for my $arg (qw/-keys -values/) {
@@ -1201,6 +1217,10 @@ sub new {
 
   return $self;
 }
+
+
+
+
 
 
 sub _inspect {
@@ -1401,7 +1421,7 @@ Data::Domain - Data description and validation
 
 =head1 DESCRIPTION
 
-A data domain is a description of a set of values, either scalar or
+A I<data domain> is a description of a set of values, either scalar or
 structured (arrays or hashes).  The description can include many
 constraints, like minimal or maximal values, regular expressions,
 required fields, forbidden fields, and also contextual
@@ -1538,7 +1558,7 @@ So in short, the "default option" is syntactic sugar for using positional
 parameters instead of named parameters.
 
 Each domain constructor has its own list of available options; these will be
-presented below, together with each subclass (for example options for
+presented with each subclass (for example options for
 setting minimal/maximal values, regular expressions, string length,
 etc.).  However, there are also some generic options, available in
 every domain constructor; these are listed here, in several categories.
