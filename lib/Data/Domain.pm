@@ -200,7 +200,7 @@ foreach my $language (keys %$builtin_msgs) {
 }
 
 # default messages : english
-my $global_msgs = $builtin_msgs->{english};
+our $global_msgs = $builtin_msgs->{english};
 
 #----------------------------------------------------------------------
 # PUBLIC METHODS
@@ -2559,6 +2559,18 @@ What is received in
 C<@args> depends on which validation rule is involved;
 it can be for example the minimal or maximal bounds,
 or the regular expression being checked.
+
+Clearly this class method has a global side-effect. In most cases
+this is exactly what is expected. However it is possible to limit
+the impact by localizing the C<$msgs> class variable :
+
+  { local $Data::Domain::global_msgs;
+    Data::Domain->messages($custom_table);
+
+    check_my_data(...);
+  }
+  # end of block; Data::Domain is back to the original messages table
+
 
 =head2 The C<-name> option to domain constructors
 

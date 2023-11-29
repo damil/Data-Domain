@@ -558,23 +558,32 @@ subtest "Lazy" => sub {
 #----------------------------------------------------------------------
 
 subtest "messages" => sub {
-  plan tests => 7;
+  plan tests => 9;
 
-  Data::Domain->messages("français");
+  { local $Data::Domain::global_msgs;
+    Data::Domain->messages("français");
 
+    $dom = Int;
+    $msg = $dom->inspect("foobar");
+    is($msg, "Int: nombre incorrect", "msg français");
+
+    $dom = Int(-name => "PositiveInt", -min => 0);
+    $msg = $dom->inspect("foobar");
+    is($msg, "PositiveInt: nombre incorrect", "msg français");
+  }
+
+  # same tests, but back to the default english messages
   $dom = Int;
   $msg = $dom->inspect("foobar");
-  is($msg, "Int: nombre incorrect", "msg français");
-
+  is($msg, "Int: invalid number", "english msg");
   $dom = Int(-name => "PositiveInt", -min => 0);
   $msg = $dom->inspect("foobar");
-  is($msg, "PositiveInt: nombre incorrect", "msg français");
+  is($msg, "PositiveInt: invalid number", "english msg");
 
-
+  # custom msg
   $dom = Int(-messages => "fix that number");
   $msg = $dom->inspect("foobar");
   is($msg, "Int: fix that number", "msg string");
-
 
   $dom = Int(-min => 4, 
              -max => 5,
@@ -594,9 +603,9 @@ subtest "messages" => sub {
   $msg = $dom->inspect(-99);
   is($msg, "validation error (TOO_SMALL)", "msg global sub");
 
-  Data::Domain->messages("english");
+  # back to standard messages
+  Data::Domain->messages('english');
 
-  # with this test, sprintf will get a redundant arg. Needs "no warnings 'redundant'" to become silent
   $dom = String(-regex    => qr/^\+?[0-9() ]+$/,
                 -messages => {SHOULD_MATCH => "illegal char"});
   $msg = $dom->inspect("foobar");
