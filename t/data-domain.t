@@ -82,7 +82,7 @@ subtest "Shortcuts" => sub {
 # Whatever
 #----------------------------------------------------------------------
 subtest "Whatever" => sub {
-  plan tests => 15;
+  plan tests => 17;
 
   $dom = Whatever;
   ok(!$dom->inspect(undef), "Whatever / undef");
@@ -92,7 +92,9 @@ subtest "Whatever" => sub {
 
   $dom = Whatever(-defined => 1, -true => 0);
   ok($dom->inspect(undef), "Whatever-defined-false / undef");
+  is($dom->inspect(undef), "Whatever: must be defined");
   ok($dom->inspect(1), "Whatever-defined-false / 1");
+  is($dom->inspect(1), "Whatever: must be false");
   ok(!$dom->inspect(0), "Whatever-defined-false / 0");
 
   $dom = Whatever(-isa => "Data::Domain");
@@ -560,7 +562,7 @@ subtest "Lazy" => sub {
 subtest "messages" => sub {
   plan tests => 9;
 
-  { local $Data::Domain::global_msgs;
+  { local $Data::Domain::GLOBAL_MSGS;
     Data::Domain->messages("français");
 
     $dom = Int;
@@ -594,14 +596,14 @@ subtest "messages" => sub {
 
   $dom = Int(-min => 4, 
              -max => 5,
-             -messages => sub {"got an error ($_[0])"});
+             -messages => sub {"$_[0]: got an error ($_[1])"});
   $msg = $dom->inspect(99);
-  is($msg, "got an error (TOO_BIG)", "msg sub");
+  is($msg, "Int: got an error (TOO_BIG)", "msg sub");
 
-  Data::Domain->messages(sub {"validation error ($_[0])"});
+  Data::Domain->messages(sub {"$_[0]: validation error ($_[1])"});
   $dom = Int(-min => 0);
   $msg = $dom->inspect(-99);
-  is($msg, "validation error (TOO_SMALL)", "msg global sub");
+  is($msg, "Int: validation error (TOO_SMALL)", "msg global sub");
 
   # back to standard messages
   Data::Domain->messages('english');

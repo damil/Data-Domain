@@ -17,8 +17,12 @@ use match::simple ();
 
 our $VERSION = "1.12";
 
-our $MESSAGE;        # global var for last message from _matches()
-our $MAX_DEEP = 100; # limit for recursive calls to inspect()
+our $MESSAGE;            # global var for last message from _matches()
+our $MAX_DEEP = 100;     # limit for recursive calls to inspect()
+our $GLOBAL_MSGS;        # table of default messages -- see below method messages()
+our $USE_OLD_MSG_API;    # flag for backward compatibility
+
+
 
 #----------------------------------------------------------------------
 # exports
@@ -103,6 +107,13 @@ sub _wrap_shortcut_options {
 # messages
 #----------------------------------------------------------------------
 
+sub _msg_bool { # small closure generator for various messages below
+  my ($must_be, $if_true, $if_false) = @_;
+  return sub {my ($name, $msg_id, $expected) = @_;
+              "$name: $must_be " . ($expected ? $if_true : $if_false)};
+}
+
+
 my $builtin_msgs = {
   english => {
     Generic => {
@@ -111,20 +122,20 @@ my $builtin_msgs = {
       TOO_SMALL     => "smaller than minimum '%s'",
       TOO_BIG       => "bigger than maximum '%s'",
       EXCLUSION_SET => "belongs to exclusion set",
-      MATCH_TRUE    => "data true/false",
+      MATCH_TRUE    => _msg_bool("must be", "true", "false"),
       MATCH_ISA     => "is not a '%s'",
       MATCH_CAN     => "does not have method '%s'",
       MATCH_DOES    => "does not do '%s'",
-      MATCH_BLESSED => "data blessed/unblessed",
-      MATCH_PACKAGE => "data is/is not a package",
-      MATCH_REF     => "is/is not a reference",
+      MATCH_BLESSED => _msg_bool("must be", "blessed", "unblessed"),
+      MATCH_PACKAGE => _msg_bool("must be", "a package", "a non-package"),
+      MATCH_REF     => _msg_bool("must be", "a reference", "a non-reference"),
       MATCH_SMART   => "does not smart-match '%s'",
-      MATCH_ISWEAK  => "weak/strong reference",
-      MATCH_READONLY=> "readonly data",
-      MATCH_TAINTED => "tainted/untainted",
+      MATCH_ISWEAK  => _msg_bool("must be", "a weak reference", "a strong reference"),
+      MATCH_READONLY=> _msg_bool("must be", "readonly", "non-readonly"),
+      MATCH_TAINTED => _msg_bool("must be", "tainted", "untainted"),
     },
     Whatever => {
-      MATCH_DEFINED => "data defined/undefined",
+      MATCH_DEFINED => _msg_bool("must be", "defined", "undefined"),
     },
     Num    => {INVALID => "invalid number",},
     Date   => {INVALID => "invalid date",},
@@ -155,20 +166,20 @@ my $builtin_msgs = {
       TOO_SMALL     => "plus petit que le minimum '%s'",
       TOO_BIG       => "plus grand que le maximum '%s'",
       EXCLUSION_SET => "fait partie des valeurs interdites",
-      MATCH_TRUE    => "donnée vraie/fausse",
+      MATCH_TRUE    => _msg_bool("doit être", "vrai", "faux"),
       MATCH_ISA     => "n'est pas un  '%s'",
       MATCH_CAN     => "n'a pas la méthode '%s'",
       MATCH_DOES    => "ne se comporte pas comme un '%s'",
-      MATCH_BLESSED => "donnée blessed/unblessed",
-      MATCH_PACKAGE => "est/n'est pas un package",
-      MATCH_REF     => "est/n'est pas une référence",
+      MATCH_BLESSED => _msg_bool("doit être", "blessed", "unblessed"),
+      MATCH_PACKAGE => _msg_bool("doit être", "un package", "un non-package"),
+      MATCH_REF     => _msg_bool("doit être", "une référence", "une non-référence"),
       MATCH_SMART   => "n'obéit pas au smart-match '%s'",
-      MATCH_ISWEAK  => "référence weak/strong",
-      MATCH_READONLY=> "donnée readonly",
-      MATCH_TAINTED => "tainted/untainted",
+      MATCH_ISWEAK  => _msg_bool("doit être", "une weak reference", "une strong reference"),
+      MATCH_READONLY=> _msg_bool("doit être", "readonly", "non-readonly"),
+      MATCH_TAINTED => _msg_bool("doit être", "tainted", "untainted"),
     },
     Whatever => {
-      MATCH_DEFINED => "donnée définie/non définie",
+      MATCH_DEFINED => _msg_bool("doit être", "défini", "non-défini"),
     },
     Num    => {INVALID => "nombre incorrect",},
     Date   => {INVALID => "date incorrecte",},
@@ -200,7 +211,7 @@ foreach my $language (keys %$builtin_msgs) {
 }
 
 # default messages : english
-our $global_msgs = $builtin_msgs->{english};
+$GLOBAL_MSGS = $builtin_msgs->{english};
 
 #----------------------------------------------------------------------
 # PUBLIC METHODS
@@ -211,7 +222,7 @@ sub messages { # private class method
   croak "messages() is a class method in Data::Domain" 
     if ref $class or $class ne 'Data::Domain';
 
-  $global_msgs = (ref $new_messages) ? $new_messages 
+  $GLOBAL_MSGS = (ref $new_messages) ? $new_messages 
                                      : $builtin_msgs->{$new_messages}
     or croak "no such builtin messages ($new_messages)";
 }
@@ -349,38 +360,48 @@ sub _check_returns {
 # METHODS FOR INTERNAL USE
 #----------------------------------------------------------------------
 
-
 sub msg {
   my ($self, $msg_id, @args) = @_;
   my $msgs     = $self->{-messages};
   my $subclass = $self->subclass;
   my $name     = $self->{-name} || $subclass;
-  my $msg;
+
+  # if using a coderef, these args will be passed to it
+  my @msgs_call_args = ($name, $msg_id, @args);
+  shift @msgs_call_args if $USE_OLD_MSG_API;
 
   # perl v5.22 and above warns if there are too many @args for sprintf.
   # The line below prevents that warning
   no if $] ge '5.022000', warnings => 'redundant';
 
-  # if there is a user_defined message, return it
+  # if there is a user-defined message, return it
   if (defined $msgs) { 
     for (ref $msgs) {
-      /^CODE/ and return $msgs->($msg_id, @args); # user function
-      /^$/    and return "$name: $msgs";          # user constant string
-      /^HASH/ and do { $msg =  $msgs->{$msg_id}   # user hash of msgs
-                         and return sprintf "$name: $msg", @args;
-                       last; # not found in this hash - revert to $global_msgs
+      /^CODE/ and return $msgs->(@msgs_call_args);                # user function
+      /^$/    and return "$name: $msgs";                          # user constant string
+      /^HASH/ and do { if (my $msg_string =  $msgs->{$msg_id}) {  # user hash of msgs
+                         return sprintf "$name: $msg_string", @args;
+                       }
+                       else {
+                         last; # not found in this hash - revert to $GLOBAL_MSGS below
+                       }
                      };
-      croak "invalid -messages option";           # otherwise
+      # otherwise
+      croak "-messages option should be a coderef, a hashref or a sprintf string";
     }
   }
 
-  # otherwise, try global messages
-  return $global_msgs->($msg_id, @args)      if ref $global_msgs eq 'CODE';
-  $msg = $global_msgs->{$subclass}{$msg_id}  # otherwise
-      || $global_msgs->{Generic}{$msg_id}
+  # there was no user-defined message, so use global messages
+  if (ref $GLOBAL_MSGS eq 'CODE') {
+    return $GLOBAL_MSGS->(@msgs_call_args);
+  }
+  else {
+    my $msg_entry = $GLOBAL_MSGS->{$subclass}{$msg_id}
+                  || $GLOBAL_MSGS->{Generic}{$msg_id}
      or croak "no error string for message $msg_id";
-
-  return sprintf "$name: $msg", @args;
+    return ref $msg_entry eq 'CODE' ? $msg_entry->(@msgs_call_args)
+                                    : sprintf "$name: $msg_entry", @args;
+  }
 }
 
 
@@ -1450,6 +1471,16 @@ the companion module L<Test::InDomain>.
 There are several other packages in CPAN doing data validation; these
 are briefly listed in the L</"SEE ALSO"> section.
 
+=head1 COMPATIBILITY WARNING : API CHANGE FOR CODEREFS
+
+Starting with version 1.3, the API for calling message coderefs has
+changed and is now in the form
+
+  $coderef->($domain_name, $msg_id, @args);
+
+See section L<Backward compatibility for coderefs> for a workaround.
+
+
 =head1 EXPORTS
 
 =head2 Domain constructors
@@ -2503,17 +2534,7 @@ validation error within the domain
 =item *
 
 a hashref : keys of the hash should be message identifiers, and
-values should be the associated error strings.
-
-=item *
-
-a coderef : the referenced subroutine is called, and should
-return the error string. The called subroutine receives
-the message identifier as argument.
-
-=back
-
-Here is an example :
+values should be the associated error strings. Here is an example :
 
   sub Phone { 
     String(-regex      => qr/^\+?[0-9() ]+$/, 
@@ -2523,6 +2544,15 @@ Here is an example :
              SHOULD_MATCH => "invalid chars in phone number",
             }, @_);
   }
+
+
+=item *
+
+a coderef : the referenced subroutine is called, and should
+return the error string. The called subroutine receives
+as arguments: C<< ($domain_name, $message_id, @optional_domain_args) >>
+
+=back
 
 
 =head2 The C<messages> class method
@@ -2541,18 +2571,18 @@ The same method can also receive  a custom table.
   Data::Domain->messages($custom_table);
 
 This should be a two-level hashref : first-level entries in the hash
-correspond to C<Data::Domain> subclasses (i.e C<< Num => {...} >>, C<<
-String => {...} >>), or to the constant C<Generic>; for each of those,
+correspond to C<Data::Domain> subclasses (i.e C<< Num => {...} >>,
+C<< String => {...} >>), or to the constant C<Generic>; for each of those,
 the second-level entries should correspond to message identifiers as
 specified in the doc for each subclass (for example C<TOO_SHORT>,
-C<NOT_A_HASH>, etc.).  Values should be strings suitable to be fed to
-L<sprintf>.  Look at C<$builtin_msgs> in the source code to see an
+C<NOT_A_HASH>, etc.).  Values should be either strings suitable to be fed to
+L<sprintf>, or coderefs. Look at C<$builtin_msgs> in the source code to see an
 example.
 
 Finally, it is also possible to write your own message generation 
 handler : 
 
-  Data::Domain->messages(sub {my ($msg_id, @args) = @_;
+  Data::Domain->messages(sub {my ($domain_name, $msg_id, @args) = @_;
                               return "you just got it wrong ($msg_id)"});
 
 What is received in 
@@ -2564,12 +2594,29 @@ Clearly this class method has a global side-effect. In most cases
 this is exactly what is expected. However it is possible to limit
 the impact by localizing the C<$msgs> class variable :
 
-  { local $Data::Domain::global_msgs;
+  { local $Data::Domain::GLOBAL_MSGS;
     Data::Domain->messages($custom_table);
 
     check_my_data(...);
   }
   # end of block; Data::Domain is back to the original messages table
+
+
+
+=head2 Backward compatibility for coderefs
+
+In the current version of this module, message coderefs are called as
+
+  $coderef->($domain_name, $msg_id, @args);
+
+Versions prior to 1.13 used a different API where the $domain_name was not available :
+
+  $coderef->($msg_id, @args);
+
+So for clients that were using coderefs in versions prior to 1.13, this is an incompatible
+change. Backward compatibility can be restored by setting a global variable to a true value :
+
+  $Data::Domain::USE_OLD_MSG_API = 1;
 
 
 =head2 The C<-name> option to domain constructors
