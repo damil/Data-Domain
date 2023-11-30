@@ -560,7 +560,7 @@ subtest "Lazy" => sub {
 #----------------------------------------------------------------------
 
 subtest "messages" => sub {
-  plan tests => 9;
+  plan tests => 10;
 
   { local $Data::Domain::GLOBAL_MSGS;
     Data::Domain->messages("français");
@@ -599,6 +599,14 @@ subtest "messages" => sub {
              -messages => sub {"$_[0]: got an error ($_[1])"});
   $msg = $dom->inspect(99);
   is($msg, "Int: got an error (TOO_BIG)", "msg sub");
+
+  { local $Data::Domain::USE_OLD_MSG_API = 1;
+    
+    Data::Domain->messages(sub {"validation error ($_[0])"});
+    $dom = Int(-min => 0);
+    $msg = $dom->inspect(-99);
+    is($msg, "validation error (TOO_SMALL)", "msg global sub, old API");
+  }
 
   Data::Domain->messages(sub {"$_[0]: validation error ($_[1])"});
   $dom = Int(-min => 0);
