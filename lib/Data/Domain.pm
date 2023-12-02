@@ -2834,7 +2834,20 @@ borrowed from L<Test::Deep> and from L<Moose::Manual::Types>.
 
 =head1 ACKNOWLEDGEMENTS
 
-Thanks to David Cantrell and Gabor Szabo for their help on issues related to smartmatch deprecation.
+Thanks to
+
+=over
+
+=item *
+
+David Cantrell and Gabor Szabo for their help on issues related to smartmatch deprecation.
+
+=item *
+
+David Schmidt (davewood) for suggesting extensions to the Struct() domain.
+
+=back
+
 
 =head1 AUTHOR
 
