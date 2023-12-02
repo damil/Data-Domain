@@ -1421,15 +1421,16 @@ Data::Domain - Data description and validation
                  });
 
   # examples of subroutines for specialized domains
-  sub Phone   { String(-regex    => qr/^\+?[0-9() ]+$/, 
-                       -messages => "Invalid phone number", @_) }
-  sub Email   { String(-regex    => qr/^[-.\w]+\@[\w.]+$/,
-                       -messages => "Invalid email", @_) }
-  sub Contact { Struct(-fields => [name   => String,
-                                   phone  => Phone,
-                                   mobile => Phone(-name => 'Mobile',
-                                                   -optional => 1),
-                                   emails => List(-all => Email)   ], @_) }
+  sub Phone         { String(-regex    => qr/^\+?[0-9() ]+$/, 
+                             -messages => "Invalid phone number", @_) }
+  sub Email         { String(-regex    => qr/^[-.\w]+\@[\w.]+$/,
+                             -messages => "Invalid email", @_) }
+  sub Contact       { Struct(-fields => [name   => String,
+                                         phone  => Phone,
+                                         mobile => Phone(-name => 'Mobile',
+                                                         -optional => 1),
+                                         emails => List(-all => Email)   ], @_) }
+  sub UpdateContact { Contact(-may_ignore => '*', @_) }
 
   # lazy subdomain
   $domain = Struct(
@@ -2196,6 +2197,9 @@ a string starting with C<foo> I<or> a number between 1 and 10.
   my $domain = Struct(-fields  => [foo => Int, bar => String],
                       -exclude => '*'); # only 'foo' and 'bar', nothing else
   
+  my $domain = Struct(-fields     => [foo => Int, bar => String],
+                      -may_ignore => '*'); # will not complain for missing fields
+  
   my $domain = Struct(-keys   => List(-all => String(qr/^[abc])),
                       -values => List(-all => Int));
 
@@ -2206,7 +2210,7 @@ Options are:
 
 =item -fields
 
-Supplies a list of keys with their associated domains. The list might
+Supplies a list of fields (hash keys) with their associated domains. The list might
 be given either as a hashref or as an arrayref.  Specifying it as an
 arrayref is useful for controlling the order in which field checks
 will be performed; this may make a difference when there are context
@@ -2216,11 +2220,35 @@ L<"LAZY CONSTRUCTORS"|/"LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)"> below ).
 
 =item -exclude
 
-Specifies which keys are not allowed in the structure. The exclusion
-may be specified as an arrayref of key names, as a compiled regular
+Specifies which fields are not allowed in the structure. The exclusion
+may be specified as an arrayref of field names, as a compiled regular
 expression, or as the string constant 'C<*>' or 'C<all>' (meaning that
-no key will be allowed except those explicitly listed in the
+no hash key will be allowed except those explicitly listed in the
 C<-fields> option.
+
+
+=item -may_ignore
+
+Specifies which fields may be ignored by the domain, i.e. may not exist
+in the structure. Like for C<-exclude>, it can be specified
+as an arrayref of field names, as a compiled regular
+expression, or as the string constant 'C<*>' or 'C<all>'.
+Absent fields will not generate errors if their name matches this specification.
+This is especially useful when your application needs to distinguish between
+an INSERT operation, where all fields must be present, and an UPDATE operation,
+where only a subset of fields are updated -- see the example in the L</SYNOPSIS>.
+
+Another way is to use the C<-optional> flag in domains associated with fields; but there
+is a subtle difference : C<-optional> accepts both missing keys or keys
+containing C<undef>, while C<-may_ignore> only accepts missing keys. Consider :
+
+  Struct(
+    -fields     => {a => Int, b => Int(-optional => 1), c => Int, d => Str},
+    -may_ignore => [qw/c d/],
+  )
+
+In this domain, C<a> must always be present, C<b> may be absent or may be undef, C<c> and C<d>
+may be absent but if present cannot be undef.
 
 =item -keys
 
