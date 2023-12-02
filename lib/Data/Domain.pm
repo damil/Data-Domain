@@ -1194,7 +1194,7 @@ our @ISA = 'Data::Domain';
 
 sub new {
   my $class = shift;
-  my @options = qw/-fields -exclude -keys -values/;
+  my @options = qw/-fields -exclude -keys -values -may_ignore/;
   my $self = Data::Domain::_parse_args(\@_, \@options, -fields => 'arrayref');
   bless $self, $class;
 
@@ -1222,10 +1222,11 @@ sub new {
   my @invalid_fields = grep {!$self->_is_proper_subdomain($self->{-fields}{$_})} @{$self->{-fields_list}};
   croak "invalid subdomain for field: ", join ", ", @invalid_fields  if @invalid_fields;
 
-  # check that -exclude is an arrayref or a regex or a string
-  if (my $exclude = $self->{-exclude}) {
-    does($exclude, 'ARRAY') || does($exclude, 'Regexp') || !ref($exclude)
-      or croak "invalid data for -exclude option";
+  # check that -exclude and -may_ignore are an arrayref or a regex or a string
+  for my $opt (qw/-exclude -may_ignore/) {
+    my $val = $self->{$opt} or next;
+    does($val, 'ARRAY') || does($val, 'Regexp') || !ref($val)
+      or croak "invalid data for $opt option";
   }
 
   # check that -keys or -values are List domains
@@ -1257,10 +1258,8 @@ sub _inspect {
   # check if there are any forbidden fields
   if (my $exclude = $self->{-exclude}) {
     my @other_fields = grep {!$self->{-fields}{$_}} keys %$data;
-    my @wrong_fields = match::simple::match($exclude, ['*', 'all'])
-                       ? @other_fields
-                       : grep {match::simple::match($_, $exclude)} @other_fields;
-    $msgs{-exclude} = $self->msg(FORBIDDEN_FIELD => join ", ", map {"'$_'"} sort @wrong_fields)
+    my @wrong_fields = grep {$self->_field_matches(-exclude => $_)} @other_fields;
+    $msgs{-exclude}  = $self->msg(FORBIDDEN_FIELD => join ", ", map {"'$_'"} sort @wrong_fields)
       if @wrong_fields;
   }
 
@@ -1272,7 +1271,9 @@ sub _inspect {
   local $context->{flat} = {%{$context->{flat}}, %$data};
 
   # check fields of the domain
+ FIELD:
   foreach my $field (@{$self->{-fields_list}}) {
+    next FIELD if not exists $data->{$field} and $self->_field_matches(-may_ignore => $field);
     local $context->{path} = [@{$context->{path}}, $field];
     my $field_spec = $self->{-fields}{$field};
     my $subdomain  = $self->_build_subdomain($field_spec, $context);
@@ -1298,6 +1299,16 @@ sub _inspect {
 
   return keys %msgs ? \%msgs : undef;
 }
+
+sub _field_matches {
+  my ($self, $spec, $field) = @_;
+
+  my $spec_content = $self->{$spec};
+  return $spec_content && (match::simple::match($spec_content, ['*', 'all'])
+                           ||
+                           match::simple::match($field, $spec_content));
+}
+
 
 #======================================================================
 package Data::Domain::One_of;

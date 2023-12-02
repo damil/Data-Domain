@@ -363,7 +363,7 @@ subtest "List" => sub {
 #----------------------------------------------------------------------
 
 subtest "Struct" => sub {
-  plan tests => 22;
+  plan tests => 26;
 
   $dom = Struct;
   ok(!$dom->inspect({}), "Struct ok");
@@ -371,11 +371,22 @@ subtest "Struct" => sub {
   ok($dom->inspect(undef), "Struct fail undef");
   ok($dom->inspect(123), "Struct fail scalar");
 
-  $dom = Struct(int => Int, str => String, num => Num(-optional => 1));
+  my @fields_spec = (int => Int, str => String, num => Num(-optional => 1));
+
+  $dom = Struct(@fields_spec);
   ok(!$dom->inspect({int => 3, str => "foo"}), "Struct ok");
   ok(!$dom->inspect({int => 3, str => "foo", bar => 123}), "Struct more fields");
   ok(!$dom->inspect({int => 3, str => "foo", num => 123}), "Struct ok num");
   ok($dom->inspect({int => "foo", str => 3, num => 123}), "Struct fail");
+
+  $dom = Struct(-fields => \@fields_spec, -may_ignore => 'all');
+  ok(!$dom->inspect({int => 3}), "str missing, ok1");
+  $dom = Struct(-fields => \@fields_spec, -may_ignore => qr/^s/);
+  ok(!$dom->inspect({int => 3}), "str missing, ok2");
+  $dom = Struct(-fields => \@fields_spec, -may_ignore => [qw/str num/]);
+  ok(!$dom->inspect({int => 3}), "str missing, ok3");
+  $dom = Struct(-fields => \@fields_spec);
+  ok($dom->inspect({int => 3}), "str missing, mandatory");
 
   $dom = Struct(-exclude => [qw/foo bar/], int => Int);
   ok(!$dom->inspect({int => 3, foobar => 4}), "Struct foobar");
