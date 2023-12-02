@@ -641,7 +641,7 @@ subtest "messages" => sub {
 #----------------------------------------------------------------------
 
 subtest "doc" => sub {
-  plan tests => 4;
+  plan tests => 5;
 
   sub Phone   { String(-regex => qr/^\+?[0-9() ]+$/, @_) }
   sub Email   { String(-regex => qr/^[-.\w]+\@[\w.]+$/, @_) }
@@ -655,6 +655,10 @@ subtest "doc" => sub {
                            emails => ['foo.bar@foo.com']});
 
   ok(!$msg, "contact OK");
+
+  sub UpdateContact { Contact(-may_ignore => '*', @_) }
+  $msg = UpdateContact->inspect({name => "Foobar"});
+  ok(!$msg, "updateContact OK with missing phone");
 
 
   $dom = Struct( foo => 123,
