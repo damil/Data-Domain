@@ -15,7 +15,7 @@ use overload '""' => \&_stringify,
              $] < 5.037 ? ('~~' => \&_matches) : ();  # fully deprecated, so cannot be overloaded
 use match::simple ();
 
-our $VERSION = "1.12";
+our $VERSION = "1.13";
 
 our $MESSAGE;            # global var for last message from _matches()
 our $MAX_DEEP = 100;     # limit for recursive calls to inspect()
@@ -2652,8 +2652,9 @@ Versions prior to 1.13 used a different API where the $domain_name was not avail
 
   $coderef->($msg_id, @args);
 
-So for clients that were using coderefs in versions prior to 1.13, this is an incompatible
-change. Backward compatibility can be restored by setting a global variable to a true value :
+So for clients that were using coderefs in versions prior to 1.13, this is an
+B<incompatible change>. Backward compatibility can be restored by setting a
+global variable to a true value :
 
   $Data::Domain::USE_OLD_MSG_API = 1;
 
