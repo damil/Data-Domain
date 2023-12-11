@@ -1485,7 +1485,7 @@ are briefly listed in the L</"SEE ALSO"> section.
 
 =head1 COMPATIBILITY WARNING : API CHANGE FOR CODEREFS
 
-Starting with version 1.3, the API for calling message coderefs has
+Starting with version 1.13, the API for calling message coderefs has
 changed and is now in the form
 
   $coderef->($domain_name, $msg_id, @args);
@@ -2230,7 +2230,7 @@ C<-fields> option.
 =item -may_ignore
 
 Specifies which fields may be ignored by the domain, i.e. may not exist
-in the structure. Like for C<-exclude>, it can be specified
+in the inspected structure. Like for C<-exclude>, this option can be specified
 as an arrayref of field names, as a compiled regular
 expression, or as the string constant 'C<*>' or 'C<all>'.
 Absent fields will not generate errors if their name matches this specification.
@@ -2855,7 +2855,7 @@ Laurent Dami, E<lt>dami at cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006, 2007, 2012, 2023 by Laurent Dami.
+Copyright 2006-2023 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
