@@ -17,8 +17,6 @@ my $msg;
 # Shortcuts
 #----------------------------------------------------------------------
 subtest "Shortcuts" => sub {
-  plan tests => 32;
-
   $dom = True;
   ok($dom->inspect(undef), "True / undef");
   ok(!$dom->inspect(1), "True / 1");
@@ -82,8 +80,6 @@ subtest "Shortcuts" => sub {
 # Whatever
 #----------------------------------------------------------------------
 subtest "Whatever" => sub {
-  plan tests => 17;
-
   $dom = Whatever;
   ok(!$dom->inspect(undef), "Whatever / undef");
   ok(!$dom->inspect(1), "Whatever / 1");
@@ -127,7 +123,6 @@ subtest "Whatever" => sub {
 # Empty
 #----------------------------------------------------------------------
 subtest "Empty" => sub {
-  plan tests => 7;
   $dom = Empty(-messages => 'your data is wrong');
   ok($dom->inspect(0),     "Empty, false val");
   ok($dom->inspect(1),     "Empty, true val");
@@ -144,7 +139,6 @@ subtest "Empty" => sub {
 #----------------------------------------------------------------------
 
 subtest "Num" => sub {
-  plan tests => 11;
   $dom = Num;
   ok(!$dom->inspect(-3.33), "Num / ok");
   ok($dom->inspect(undef), "Num / undef");
@@ -169,8 +163,6 @@ subtest "Num" => sub {
 #----------------------------------------------------------------------
 
 subtest "Int&Nat" => sub {
-  plan tests => 7;
-
   $dom = Int;
   ok(!$dom->inspect(1234), "Int / ok");
   ok(!$dom->inspect(-1234), "Int / ok");
@@ -188,8 +180,6 @@ subtest "Int&Nat" => sub {
 #----------------------------------------------------------------------
 
 subtest "Date" => sub {
-  plan tests => 10;
-
   #$dom = Date;
   $dom = "Data::Domain::Date"->new; # try the full OO API
   ok(!$dom->inspect('01.02.2003'), "Date / ok");
@@ -223,8 +213,6 @@ subtest "Date" => sub {
 # Time
 #----------------------------------------------------------------------
 subtest "Time" => sub {
-  plan tests => 7;
-
   $dom = Time;
   ok(!$dom->inspect('10:14'), "Time / ok");
   ok($dom->inspect('foobar'), "Time / invalid");
@@ -244,8 +232,6 @@ subtest "Time" => sub {
 # String
 #----------------------------------------------------------------------
 subtest "String" => sub {
-  plan tests => 15;
-
   $dom = String;
   ok($dom->inspect(undef),            "String / undef");
   ok($dom->inspect({}),               "String / ref");
@@ -282,8 +268,6 @@ subtest "String" => sub {
 # Handle
 #----------------------------------------------------------------------
 subtest "Handle" => sub {
-  plan tests => 3;
-
   $dom = Handle;
   ok(!$dom->inspect(*STDOUT),  "Handle/stdout 1");
   ok(!$dom->inspect(\*STDOUT), "Handle/stdout 2");
@@ -297,8 +281,6 @@ subtest "Handle" => sub {
 #----------------------------------------------------------------------
 
 subtest "Enum" => sub {
-  plan tests => 3;
-
   $dom = Enum(qw/foo bar buz/);
   ok(!$dom->inspect("foo"), "Enum ok");
   ok($dom->inspect("foobar"), "Enum fail");
@@ -313,8 +295,6 @@ subtest "Enum" => sub {
 #----------------------------------------------------------------------
 
 subtest "List" => sub {
-  plan tests => 26;
-
   $dom = List;
   ok(!$dom->inspect([]), "List ok");
   ok(!$dom->inspect([1 .. 4]), "List ok");
@@ -363,8 +343,6 @@ subtest "List" => sub {
 #----------------------------------------------------------------------
 
 subtest "Struct" => sub {
-  plan tests => 26;
-
   $dom = Struct;
   ok(!$dom->inspect({}), "Struct ok");
   ok($dom->inspect([]), "Struct fail list");
@@ -421,8 +399,6 @@ subtest "Struct" => sub {
 #----------------------------------------------------------------------
 
 subtest "One_of" => sub {
-  plan tests => 5;
-
   $dom = One_of(String(qr/^[AEIOU]/), Int(-min => 0));
   ok(!$dom->inspect("Alleluia"), "One_of ok1");
   ok(!$dom->inspect(1234), "One_of ok2");
@@ -436,8 +412,6 @@ subtest "One_of" => sub {
 #----------------------------------------------------------------------
 
 subtest "All_of" => sub {
-  plan tests => 3;
-
   $dom = All_of(String(qr/[24680]/), Int(-min => 0));
   ok(!$dom->inspect(1234), "All_of, positive and contains even digit");
   ok($dom->inspect(135),   "All_of, positive without even digit");
@@ -450,8 +424,6 @@ subtest "All_of" => sub {
 #----------------------------------------------------------------------
 
 subtest "Overloads" => sub {
-  plan tests => 4;
-
   $dom = Unblessed;
   my $string = "$dom";
   like($string, qr/Whatever/, "stringify");
@@ -479,8 +451,6 @@ subtest "Overloads" => sub {
 #----------------------------------------------------------------------
 
 subtest "Lazy" => sub {
-  plan tests => 10;
-
   $dom = Struct(
     d_begin => Date,
     d_end   => sub {my $context = shift;
@@ -571,8 +541,6 @@ subtest "Lazy" => sub {
 #----------------------------------------------------------------------
 
 subtest "messages" => sub {
-  plan tests => 10;
-
   { local $Data::Domain::GLOBAL_MSGS;
     Data::Domain->messages("français");
 
@@ -641,8 +609,6 @@ subtest "messages" => sub {
 #----------------------------------------------------------------------
 
 subtest "doc" => sub {
-  plan tests => 5;
-
   sub Phone   { String(-regex => qr/^\+?[0-9() ]+$/, @_) }
   sub Email   { String(-regex => qr/^[-.\w]+\@[\w.]+$/, @_) }
   sub Contact { Struct(-fields => [name   => String,
