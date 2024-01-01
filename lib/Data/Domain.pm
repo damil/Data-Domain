@@ -9,6 +9,7 @@ use Data::Dumper;
 use Scalar::Does 0.007;
 use Scalar::Util ();
 use Try::Tiny;
+use List::Util      qw/max uniq/;
 use List::MoreUtils qw/part natatime any/;
 use if $] < 5.037, experimental => 'smartmatch';      # smartmatch no longer experimental after 5.037
 use overload '""' => \&_stringify,
@@ -21,8 +22,7 @@ our $MESSAGE;            # global var for last message from _matches()
 our $MAX_DEEP = 100;     # limit for recursive calls to inspect()
 our $GLOBAL_MSGS;        # table of default messages -- see below method messages()
 our $USE_OLD_MSG_API;    # flag for backward compatibility
-
-
+our $IN_VALIDATION_MODE; # flag for activating "validation mode" while inspecting a data tree
 
 #----------------------------------------------------------------------
 # exports
@@ -217,14 +217,14 @@ $GLOBAL_MSGS = $builtin_msgs->{english};
 # PUBLIC METHODS
 #----------------------------------------------------------------------
 
-sub messages { # private class method
+sub messages { # class method
   my ($class, $new_messages) = @_;
   croak "messages() is a class method in Data::Domain" 
     if ref $class or $class ne 'Data::Domain';
 
   $GLOBAL_MSGS = (ref $new_messages) ? $new_messages 
                                      : $builtin_msgs->{$new_messages}
-    or croak "no such builtin messages ($new_messages)";
+    or croak "no such builtin messages: $new_messages";
 }
 
 
@@ -232,15 +232,25 @@ sub inspect {
   my ($self, $data, $context) = @_;
   no warnings 'recursion';
 
-  if (!defined $data) {
-    # success if data was optional;
-    return if $self->{-optional};
+  # build a context if this is the top-level call
+  $context ||= $self->_build_context($data);
 
-    # only the 'Whatever' domain can accept undef; other domains will fail
+  if (!defined $data) {
+    # in validation mode, insert the default value into the tree of valid data
+    $context->{valid_data} = $self->{-default} if $IN_VALIDATION_MODE;
+
+    # success if data was optional;
+    return if $self->{-optional} or exists $self->{-default};
+
+    # otherwise fail, except for the 'Whatever' domain which is the only one to accept undef
     return $self->msg(UNDEFINED => '')
       unless $self->isa("Data::Domain::Whatever");
   }
   else { # if $data is defined
+
+    # remember the value within the tree of valid data
+    $context->{valid_data} = $data if $IN_VALIDATION_MODE;
+
     # check some general properties
     if (my $isa = $self->{-isa}) {
       try {$data->isa($isa)}
@@ -303,6 +313,45 @@ sub inspect {
 }
 
 
+sub validate {
+  my ($self, $data) = @_;
+
+  # tell the inspect() method that we are temporarily in validation mode
+  local $IN_VALIDATION_MODE = 1;
+
+  # inspect the data
+  my $context = $self->_build_context($data);
+  my $msg     = $self->inspect($data, $context);
+  
+  # return the validated data tree if there is no error message
+  return $context->{valid_data} if !$msg;
+
+  # otherwise, die with the error message
+  croak $self->name . ": invalid data because " . _stringify_msg($msg);
+}
+
+
+sub _stringify_msg {
+  my $msg = shift;
+  return does($msg, 'ARRAY') ? join ", ", map {_stringify_msg($_)} @$msg
+       : does($msg, 'HASH')  ? join ", ", map {"$_:" . _stringify_msg($msg->{$_})} sort keys %$msg
+       :                       $msg;
+}
+
+
+
+
+sub _build_context {
+  my ($self, $data) = @_;
+
+  return {root => $data,
+          flat => {},
+          path => [],
+          list => []};
+}
+
+
+
 sub _check_has {
   my ($self, $data, $context) = @_;
 
@@ -363,8 +412,7 @@ sub _check_returns {
 sub msg {
   my ($self, $msg_id, @args) = @_;
   my $msgs     = $self->{-messages};
-  my $subclass = $self->subclass;
-  my $name     = $self->{-name} || $subclass;
+  my $name     = $self->name;
 
   # if using a coderef, these args will be passed to it
   my @msgs_call_args = ($name, $msg_id, @args);
@@ -396,12 +444,18 @@ sub msg {
     return $GLOBAL_MSGS->(@msgs_call_args);
   }
   else {
-    my $msg_entry = $GLOBAL_MSGS->{$subclass}{$msg_id}
+    my $msg_entry = $GLOBAL_MSGS->{$self->subclass}{$msg_id}
                   || $GLOBAL_MSGS->{Generic}{$msg_id}
      or croak "no error string for message $msg_id";
     return ref $msg_entry eq 'CODE' ? $msg_entry->(@msgs_call_args)
                                     : sprintf "$name: $msg_entry", @args;
   }
+}
+
+
+sub name { 
+  my ($self) = @_;
+  return $self->{-name} || $self->subclass;
 }
 
 
@@ -415,7 +469,7 @@ sub subclass { # returns the class name without initial 'Data::Domain::'
 
 sub _expand_range {
   my ($self, $range_field, $min_field, $max_field) = @_;
-  my $name = $self->{-name} || $self->subclass;
+  my $name = $self->name;
 
   # the range field will be replaced by min and max fields
   if (my $range = delete $self->{$range_field}) {
@@ -504,7 +558,8 @@ sub _is_proper_subdomain {
 my @common_options = qw/-optional -name -messages
                         -true -isa -can -does -matches -ref
                         -has -returns
-                        -blessed -package -isweak -readonly -tainted/;
+                        -blessed -package -isweak -readonly -tainted
+                        -default/;
 
 sub _parse_args {
   my ($args_ref, $options_ref, $default_option, $arg_type) = @_;
@@ -1108,6 +1163,11 @@ sub _inspect {
   does($data, 'ARRAY')
     or return $self->msg(NOT_A_LIST => $data);
 
+  # build a shallow copy of the data, so that default values can be inserted
+  my @valid_data;
+  @valid_data = @$data if $IN_VALIDATION_MODE;
+
+
   if (defined $self->{-min_size} && @$data < $self->{-min_size}) {
     return $self->msg(TOO_SHORT => $self->{-min_size});
   }
@@ -1119,9 +1179,6 @@ sub _inspect {
   return unless $self->{-items} || $self->{-all} || $self->{-any};
 
   # prepare context for calling lazy subdomains
-  $context ||= {root => $data,
-                flat => {},
-                path => []};
   local $context->{list} = $data;
 
   # initializing some variables
@@ -1138,6 +1195,9 @@ sub _inspect {
       or next;
     $msgs[$i]      = $subdomain->inspect($data->[$i], $context);
     $has_invalid ||= $msgs[$i];
+
+    # re-inject the valid data for that slot
+    $valid_data[$i] = $context->{valid_data} if $IN_VALIDATION_MODE;
   }
 
   # check the -all condition (can be a single domain or an arrayref of domains)
@@ -1151,6 +1211,9 @@ sub _inspect {
       my $subdomain  = $self->_build_subdomain($all->[$j], $context);
       $msgs[$i]      = $subdomain->inspect($data->[$i], $context);
       $has_invalid ||= $msgs[$i];
+
+      # re-inject the valid data for that slot
+      $valid_data[$i] = $context->{valid_data} if $IN_VALIDATION_MODE && not defined $valid_data[$i];
     }
   }
 
@@ -1163,7 +1226,7 @@ sub _inspect {
 
     # there must be data to inspect
     $n_data > $n_items
-      or return $self->msg(ANY => ($any->[0]{-name} || $any->[0]->subclass));
+      or return $self->msg(ANY => $any->[0]->name);
 
     # inspect the remaining data for all 'any' conditions
   CONDITION:
@@ -1175,9 +1238,12 @@ sub _inspect {
         my $error  = $subdomain->inspect($data->[$i], $context);
         next CONDITION if not $error;
       }
-      return $self->msg(ANY => ($subdomain->{-name} || $subdomain->subclass));
+      return $self->msg(ANY => $subdomain->name);
     }
   }
+
+  # re-inject the whole valid array into the context
+  $context->{valid_data} = \@valid_data if $IN_VALIDATION_MODE;
 
   return; # OK, no error
 }
@@ -1255,6 +1321,11 @@ sub _inspect {
 
   my %msgs;
 
+  # build a shallow copy of the data, so that default values can be inserted
+  my %valid_data;
+  %valid_data = %$data if $IN_VALIDATION_MODE;
+
+
   # check if there are any forbidden fields
   if (my $exclude = $self->{-exclude}) {
     my @other_fields = grep {!$self->{-fields}{$_}} keys %$data;
@@ -1264,10 +1335,6 @@ sub _inspect {
   }
 
   # prepare context for calling lazy subdomains
-  $context ||= {root => $data,
-                flat => {},
-                list => [],
-                path => []};
   local $context->{flat} = {%{$context->{flat}}, %$data};
 
   # check fields of the domain
@@ -1279,6 +1346,9 @@ sub _inspect {
     my $subdomain  = $self->_build_subdomain($field_spec, $context);
     my $msg        = $subdomain->inspect($data->{$field}, $context);
     $msgs{$field}  = $msg if $msg;
+
+    # re-inject the valid data for that field
+    $valid_data{$field} = $context->{valid_data} if $IN_VALIDATION_MODE;
   }
 
   # check the List domain for keys
@@ -1296,6 +1366,9 @@ sub _inspect {
     my $msg        = $subdomain->inspect([values %$data], $context);
     $msgs{-values} = $msg if $msg;
   }
+
+  # re-inject the whole valid tree into the context
+  $context->{valid_data} = \%valid_data if $IN_VALIDATION_MODE;
 
   return keys %msgs ? \%msgs : undef;
 }
