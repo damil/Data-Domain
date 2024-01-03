@@ -294,7 +294,7 @@ sub inspect {
     }
     if (defined $self->{-tainted}) {
       return $self->msg(MATCH_TAINTED => $self->{-tainted})
-        if Scalar::Util::readonly($data) xor $self->{-tainted};
+        if Scalar::Util::tainted($data) xor $self->{-tainted};
     }
   }
 
