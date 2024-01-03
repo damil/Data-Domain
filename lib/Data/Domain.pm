@@ -22,7 +22,6 @@ our $MESSAGE;            # global var for last message from _matches()
 our $MAX_DEEP = 100;     # limit for recursive calls to inspect()
 our $GLOBAL_MSGS;        # table of default messages -- see below method messages()
 our $USE_OLD_MSG_API;    # flag for backward compatibility
-our $IN_VALIDATION_MODE; # flag for activating "validation mode" while inspecting a data tree
 
 #----------------------------------------------------------------------
 # exports
@@ -237,7 +236,7 @@ sub inspect {
 
   if (!defined $data) {
     # in validation mode, insert the default value into the tree of valid data
-    $context->{valid_data} = $self->{-default} if $IN_VALIDATION_MODE;
+    $context->{valid_data} = $self->{-default} if $context->{in_validation_mode};
 
     # success if data was optional;
     return if $self->{-optional} or exists $self->{-default};
@@ -249,7 +248,7 @@ sub inspect {
   else { # if $data is defined
 
     # remember the value within the tree of valid data
-    $context->{valid_data} = $data if $IN_VALIDATION_MODE;
+    $context->{valid_data} = $data if $context->{in_validation_mode};
 
     # check some general properties
     if (my $isa = $self->{-isa}) {
@@ -316,11 +315,8 @@ sub inspect {
 sub validate {
   my ($self, $data) = @_;
 
-  # tell the inspect() method that we are temporarily in validation mode
-  local $IN_VALIDATION_MODE = 1;
-
   # inspect the data
-  my $context = $self->_build_context($data);
+  my $context = $self->_build_context($data, in_validation_mode => 1);
   my $msg     = $self->inspect($data, $context);
   
   # return the validated data tree if there is no error message
@@ -339,12 +335,14 @@ sub _stringify_msg {
 }
 
 sub _build_context {
-  my ($self, $data) = @_;
+  my ($self, $data, %extra) = @_;
 
   return {root => $data,
           flat => {},
           path => [],
-          list => []};
+          list => [],
+          %extra,
+        };
 }
 
 
@@ -1186,7 +1184,7 @@ sub _inspect {
 
   # build a shallow copy of the data, so that default values can be inserted
   my @valid_data;
-  @valid_data = @$data if $IN_VALIDATION_MODE;
+  @valid_data = @$data if $context->{in_validation_mode};
 
 
   if (defined $self->{-min_size} && @$data < $self->{-min_size}) {
@@ -1218,7 +1216,7 @@ sub _inspect {
     $has_invalid ||= $msgs[$i];
 
     # re-inject the valid data for that slot
-    $valid_data[$i] = $context->{valid_data} if $IN_VALIDATION_MODE;
+    $valid_data[$i] = $context->{valid_data} if $context->{in_validation_mode};
   }
 
   # check the -all condition (can be a single domain or an arrayref of domains)
@@ -1234,7 +1232,7 @@ sub _inspect {
       $has_invalid ||= $msgs[$i];
 
       # re-inject the valid data for that slot
-      $valid_data[$i] = $context->{valid_data} if $IN_VALIDATION_MODE && not defined $valid_data[$i];
+      $valid_data[$i] = $context->{valid_data} if $context->{in_validation_mode} && not defined $valid_data[$i];
     }
   }
 
@@ -1264,7 +1262,7 @@ sub _inspect {
   }
 
   # re-inject the whole valid array into the context
-  $context->{valid_data} = \@valid_data if $IN_VALIDATION_MODE;
+  $context->{valid_data} = \@valid_data if $context->{in_validation_mode};
 
   return; # OK, no error
 }
@@ -1344,7 +1342,7 @@ sub _inspect {
 
   # build a shallow copy of the data, so that default values can be inserted
   my %valid_data;
-  %valid_data = %$data if $IN_VALIDATION_MODE;
+  %valid_data = %$data if $context->{in_validation_mode};
 
 
   # check if there are any forbidden fields
@@ -1369,7 +1367,7 @@ sub _inspect {
     $msgs{$field}  = $msg if $msg;
 
     # re-inject the valid data for that field
-    $valid_data{$field} = $context->{valid_data} if $IN_VALIDATION_MODE;
+    $valid_data{$field} = $context->{valid_data} if $context->{in_validation_mode};
   }
 
   # check the List domain for keys
@@ -1389,7 +1387,7 @@ sub _inspect {
   }
 
   # re-inject the whole valid tree into the context
-  $context->{valid_data} = \%valid_data if $IN_VALIDATION_MODE;
+  $context->{valid_data} = \%valid_data if $context->{in_validation_mode};
 
   return keys %msgs ? \%msgs : undef;
 }
