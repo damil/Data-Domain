@@ -333,13 +333,10 @@ sub validate {
 
 sub _stringify_msg {
   my $msg = shift;
-  return does($msg, 'ARRAY') ? join ", ", map {_stringify_msg($_)} @$msg
-       : does($msg, 'HASH')  ? join ", ", map {"$_:" . _stringify_msg($msg->{$_})} sort keys %$msg
+  return does($msg, 'ARRAY') ? join ", ", map {_stringify_msg($_)} grep {$_} @$msg
+       : does($msg, 'HASH')  ? join ", ", map {"$_:" . _stringify_msg($msg->{$_})} grep {$msg->{$_}} sort keys %$msg
        :                       $msg;
 }
-
-
-
 
 sub _build_context {
   my ($self, $data) = @_;
@@ -349,6 +346,30 @@ sub _build_context {
           path => [],
           list => []};
 }
+
+
+sub func_signature {
+  my ($self) = @_;
+
+  # returns a closure over $self, that calls ->validate() on it's parameter list and unpacks the result
+  return sub {my $params = $self->isa('Data::Domain::Struct') ? $self->validate({@_})
+                                                              : $self->validate(\@_);
+              return does($params, 'ARRAY') ? @$params
+                   : does($params, 'HASH')  ? %$params
+                   :                          $params};
+}
+
+
+sub meth_signature {
+  my ($self) = @_;
+  my $sig = $self->func_signature;
+
+  # same as func_signature, but the first param is set apart since it is the invocant of the method
+  return sub {my $obj = shift;
+              return ($obj, &$sig)};
+}
+
+
 
 
 
