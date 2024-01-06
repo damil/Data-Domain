@@ -1540,7 +1540,7 @@ Data::Domain - Data description and validation
   my $string_dom   = String(-min_length => 2, -optional => 1);
   my $handle_dom   = Handle;
   my $enum_dom     = Enum(qw/foo bar buz/);
-  my $int_list_dom = List(-min_size => 1, -all => Int);
+  my $int_list_dom = List(-min_size => 1, -all => Int, -default => [1, 2, 3]);
   my $mixed_list   = List(String, Int(-min => 0), Date, True, Defined);
   my $struct_dom   = Struct(foo => String, bar => Int(-optional => 1));
   my $obj_dom      = Obj(-can => 'print');
@@ -1549,6 +1549,26 @@ Data::Domain - Data description and validation
   # using the domain to check data
   my $error_messages = $domain->inspect($some_data);
   reject_form($error_messages) if $error_messages;
+  # or
+  die $domain->stringify_msg($error_messages) if $error_messages;
+
+  # using the domain to get back a tree of validated data
+  my $valid_tree = $domain->validate($initial_tree); # will return a copy with inserted default values;
+                                                     # will die if there are validation errors
+
+  # using the domain for unpacking subroutine arguments
+  my $sig = List(Nat(-max => 20), String(-regex => qr/^hello/), Coderef)->func_signature;
+  sub some_func {
+    my ($i, $s, $code) = &$sig;  # or more verbose: = $sig->(@_);
+    ...
+  }
+
+  # using the domain for unpacking method arguments
+  my $sig = List(Nat(-max => 20), String(-regex => qr/^hello/), Coderef)->meth_signature;
+  sub some_method {
+    my ($self, $i, $s, $code) = &$meth_sig;  # or more verbose: = $meth_sig->(@_);
+    ...
+  }
 
   # custom name and custom messages (2 different ways)
   $domain = Int(-name => 'age', -min => 3, -max => 18, 
@@ -1590,10 +1610,11 @@ Data::Domain - Data description and validation
   # list with repetitive structure (here : triples)
   my $domain = List(-all => [String, Int, Obj(-can => 'print')]);
 
+
 =head1 DESCRIPTION
 
 A I<data domain> is a description of a set of values, either scalar or
-structured (arrays or hashes).  The description can include many
+structured (arrays or hashes, possibly nested).  The description can include many
 constraints, like minimal or maximal values, regular expressions,
 required fields, forbidden fields, and also contextual
 dependencies. From that description, one can then invoke the domain's
@@ -1612,11 +1633,32 @@ dependencies within the structure, and with several options to
 finely tune the error messages returned to the user.
 
 The main usage for C<Data::Domain> is to check input from forms in
-interactive applications : structured error messages give detailed
-information about which fields were rejected and why; this can be
-used to display a form again, highlighting the wrong fields.
-Another usage is for writing automatic tests, with the help of
-the companion module L<Test::InDomain>.
+interactive applications. Structured error messages returned by the
+domain give detailed information about which fields were rejected and
+why; this can be used to display a new form to the user, highlighting the wrong
+inputs. 
+
+A domain can also I<validate> a datatree, instead of I<inspecting> it.
+Instead of returning error messages, this returns a copy of the input
+data, where missing components are replaced by default values (if such
+defaults where specified within the domain). In case of failure, the validation
+operation dies with a stringified version of the error messages.
+This usage is quite similar to type systems like L<Type::Tiny> or L<Specio>, or
+to parameter validation modules like L<Params::ValidationCompiler>;
+such systems are more focused on efficiency and on integration with L<Moose>,
+while the present module is more focused on expressivity for describing
+constraints on deeply nested structures.
+
+The validation operation can be encapsulates as a I<signature>, which
+is a reference to an anonymous function that will unpack arguments
+passed to a subroutine or to a method, will validate them, and will return them
+in the form of an array or a hash, as demanded by the context.
+This is probably not as fast nor as elegant as the new "signature" feature introduced
+in Perl 5.20; but it is a convenient way for performing complex validity tests
+on parameters received from the caller.
+
+The companion module L<Test::InDomain> uses domains for checking
+datatrees in the context of automated tests.
 
 There are several other packages in CPAN doing data validation; these
 are briefly listed in the L</"SEE ALSO"> section.
@@ -1628,7 +1670,8 @@ changed and is now in the form
 
   $coderef->($domain_name, $msg_id, @args);
 
-See section L<Backward compatibility for coderefs> for a workaround.
+which is incompatible with previous versions of the module.
+See section L<Backward compatibility for message coderefs> for a workaround.
 
 
 =head1 EXPORTS
@@ -1753,6 +1796,12 @@ every domain constructor; these are listed here, in several categories.
 If true, the domain will accept C<undef>, without generating an
 error message.
 
+=item C<-default>
+
+Specifies an default value to be inserted by the L</validate> method
+if the input data is C<undef> or nonexistent. For the L</inspect> method,
+this option is equivalent to C<-optional>.
+
 =item C<-name>
 
 Defines a name for the domain, that will be printed in error
@@ -1833,26 +1882,25 @@ this is checked through C<< eval {$data->can($method)} >>.
 =item C<-does>
 
 Checks if the data does the supplied role; this is checked
-through L<Scalar::Does>.
+through L<Scalar::Does>. Used for example by the L</Regexp> and L</Coderef> domain shortcuts.
 
 =item C<-matches>
 
-Was originally designed for the smart match operator in perl 5.10.
-Is now implemented through L<match::simple>.
+Was originally designed for the smart match operator in Perl 5.10.
+Smart mach is now deprecated, so this option is now implemented through L<match::simple>.
 
 =back
 
 =head3 Options for checking return values
 
-These options call methods or coderefs within the data, and
+Options in this category call methods or coderefs within the data, and
 then check the results against the supplied domains. This is
 somehow contrary to the principle of "domains", because a function
-call or method call not only inspects the data : I<it might also
-alter the data>. However, one could also argue that peeking into
+call or method call not only inspects the data : I<it might also alter the data>.
+However, one could also argue that peeking into
 an object's internals is contrary to the principle of encapsulation,
 so in this sense, method calls are more appropriate. You decide ...
 but beware of side-effects in your data!
-
 
 =over
 
@@ -1947,7 +1995,75 @@ The client code can then exploit this structure to dispatch
 error messages to appropriate locations (like for example the form
 fields from which the data was gathered).
 
-=head2 stringification
+
+=head2 validate
+
+  my $valid_data = $domain->validate($some_data);
+
+This method builds a copy of the supplied data, where missing items
+are replaced by default values  (if such defaults where specified within the domain).
+If the data is invalid, an error is thrown with a stringified version of the error message.
+
+The returned value is either a scalar or a reference to a nested datastructure (arrayref or hashref).
+
+=head2 func_signature
+
+  my $sig_list = List(...)->func_signature;
+  sub some_func {
+    my ($x, $y, $z) = &$sig_list; # or $sig_list->(@_);
+    ...
+  }
+
+  my $sig_hash = Struct(...)->func_signature;
+  sub some_other_func {
+    my %args = &$sig_hash; # or $sig_hash->(@_);
+    ...
+  }
+
+Returns a reference to an anonymous function that can be used for unpacking arguments
+passed to a subroutine. The arguments array be encapsulated as an
+arrayref or hashref, depending on what is expected by the domain, and will be passed to
+the L</validate> method; the result is dereferenced and returned as a list, so that it
+can be used on the right-hand side of a assignment to variables.
+
+Signatures can be invoked on any list, but in most cases it makes sense to invoke them
+on the parameters array C<@_>. This can be done either explicitly :
+
+  $sig->(@_);
+
+or it can be done implicitly through Perl's arcane syntax for function calls
+
+  &$sig;
+
+that makes current C<@_> visible to the called subroutine.
+
+Arguments unpacking may not work properly for domains that have varying datastructures,
+like for example C<< Any_of(List(...), Struct(...))  >>. Such a domain would accept either
+an arrayref or a hashref, but this cannot be unpacked deterministically by the C<func_signature>
+method.
+
+
+=head2 meth_signature
+
+  my $sig_list = List(...)->meth_signature;
+  sub some_meth {
+    my ($self, $x, $y, $z) = &$sig_list;
+    ...
+  }
+
+This is like L</func_signature>, except that the first item in C<@_> is kept apart,
+since it is a reference to the invocant object or class, and therefore should
+not be passed to the domain for validation.
+
+=head2 stringify_msg
+
+  my $string_msg = $domain->stringify_msg($messages);
+  die $string_msg;
+
+For clients that need a string instead of a datastructur of error messages,
+method C<stringify_msg> collects all error information into a single string.
+
+=head2 domain stringification
 
 When printed, domains stringify to a compact L<Data::Dumper> representation
 of their internal attributes; these details can be useful for debugging or
@@ -1982,6 +2098,8 @@ If true, the data must be defined. If false, the data must be undef.
 
 The C<Whatever> is mostly used together with some of the general
 options described above, like C<-true>, C<-does>, C<-can>, etc.
+The most common combinations are encapsulated under their own domain
+names : see L</BUILTIN SHORTCUTS>.
 
 
 =head2 Empty
@@ -2303,6 +2421,12 @@ where the first item is a string, the second item is an integer
 and the third item is an object with a C<print> method.
 
 =back
+
+This can also be used for ensuring that the list will not contain
+any other items after the required items :
+
+  List(-items => [Int, Bool, String], -all => Empty); # cannot have anything after the third item
+
 
 =item -any
 
@@ -2787,7 +2911,7 @@ the impact by localizing the C<$msgs> class variable :
 
 
 
-=head2 Backward compatibility for coderefs
+=head2 Backward compatibility for message coderefs
 
 In the current version of this module, message coderefs are called as
 
@@ -2797,7 +2921,7 @@ Versions prior to 1.13 used a different API where the $domain_name was not avail
 
   $coderef->($msg_id, @args);
 
-So for clients that were using coderefs in versions prior to 1.13, this is an
+So for clients that were using message coderefs in versions prior to 1.13, this is an
 B<incompatible change>. Backward compatibility can be restored by setting a
 global variable to a true value :
 
