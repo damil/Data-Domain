@@ -232,7 +232,7 @@ sub inspect {
   no warnings 'recursion';
 
   # build a context if this is the top-level call
-  $context ||= $self->_build_context($data);
+  $context ||= $self->_initial_inspect_context($data);
 
   if (!defined $data) {
     # in validation mode, insert the default value into the tree of valid data
@@ -316,25 +316,115 @@ sub validate {
   my ($self, $data) = @_;
 
   # inspect the data
-  my $context = $self->_build_context($data, in_validation_mode => 1);
+  my $context = $self->_initial_inspect_context($data, in_validation_mode => 1);
   my $msg     = $self->inspect($data, $context);
   
   # return the validated data tree if there is no error message
   return $context->{valid_data} if !$msg;
 
   # otherwise, die with the error message
-  croak $self->name . ": invalid data because " . _stringify_msg($msg);
+  croak $self->name . ": invalid data because " . $self->stringify_msg($msg);
 }
 
 
-sub _stringify_msg {
-  my $msg = shift;
-  return does($msg, 'ARRAY') ? join ", ", map {_stringify_msg($_)} grep {$_} @$msg
-       : does($msg, 'HASH')  ? join ", ", map {"$_:" . _stringify_msg($msg->{$_})} grep {$msg->{$_}} sort keys %$msg
+sub stringify_msg {
+  my ($self, $msg) = @_;
+
+  return does($msg, 'ARRAY') ? join ", ", map {$self->stringify_msg($_)} grep {$_} @$msg
+       : does($msg, 'HASH')  ? join ", ", map {"$_:" . $self->stringify_msg($msg->{$_})} grep {$msg->{$_}} sort keys %$msg
        :                       $msg;
 }
 
-sub _build_context {
+
+
+sub func_signature {
+  my ($self) = @_;
+
+  # this method is overridden in List() and Struct() for dealing with arrays and hashes
+  return sub {my $params = $self->validate(@_); $params};
+}
+
+
+sub meth_signature {
+  my ($self) = @_;
+  my $sig = $self->func_signature;
+
+  # same as func_signature, but the first param is set apart since it is the invocant of the method
+  return sub {my $obj = shift; return ($obj, &$sig)};          # note: &$sig is equivalent to $sig->(@_)
+}
+
+
+
+
+#----------------------------------------------------------------------
+# METHODS FOR INTERNAL USE
+#----------------------------------------------------------------------
+# Note : methods without initial underscore could possibly be useful for subclasses, either through
+# invocation or through subclassing. Methods with initial underscore are really internal mechanics;
+# I doubt that anybody else would want to invoke or subclass them ... but nothing prevents you from
+# doing so !
+
+
+
+sub msg {
+  my ($self, $msg_id, @args) = @_;
+  my $msgs     = $self->{-messages};
+  my $name     = $self->name;
+
+  # if using a coderef, these args will be passed to it
+  my @msgs_call_args = ($name, $msg_id, @args);
+  shift @msgs_call_args if $USE_OLD_MSG_API; # because older versions did not pass the $name arg
+
+  # perl v5.22 and above warns if there are too many @args for sprintf.
+  # The line below prevents that warning
+  no if $] ge '5.022000', warnings => 'redundant';
+
+  # if there is a user-defined message, return it
+  if (defined $msgs) { 
+    for (ref $msgs) {
+      /^CODE/ and return $msgs->(@msgs_call_args);                # user function
+      /^$/    and return "$name: $msgs";                          # user constant string
+      /^HASH/ and do { if (my $msg_string =  $msgs->{$msg_id}) {  # user hash of msgs
+                         return sprintf "$name: $msg_string", @args;
+                       }
+                       else {
+                         last; # not found in this hash - revert to $GLOBAL_MSGS below
+                       }
+                     };
+      # otherwise
+      croak "-messages option should be a coderef, a hashref or a sprintf string";
+    }
+  }
+
+  # there was no user-defined message, so use global messages
+  if (ref $GLOBAL_MSGS eq 'CODE') {
+    return $GLOBAL_MSGS->(@msgs_call_args);
+  }
+  else {
+    my $msg_entry = $GLOBAL_MSGS->{$self->subclass}{$msg_id}
+                  || $GLOBAL_MSGS->{Generic}{$msg_id}
+     or croak "no error string for message $msg_id";
+    return ref $msg_entry eq 'CODE' ? $msg_entry->(@msgs_call_args)
+                                    : sprintf "$name: $msg_entry", @args;
+  }
+}
+
+
+sub name { 
+  my ($self) = @_;
+  return $self->{-name} || $self->subclass;
+}
+
+
+sub subclass { # returns the class name without initial 'Data::Domain::'
+  my ($self) = @_;
+  my $class = ref($self) || $self;
+  (my $subclass = $class) =~ s/^Data::Domain:://;
+  return $subclass;
+}
+
+
+sub _initial_inspect_context {
   my ($self, $data, %extra) = @_;
 
   return {root => $data,
@@ -344,31 +434,6 @@ sub _build_context {
           %extra,
         };
 }
-
-
-sub func_signature {
-  my ($self) = @_;
-
-  # returns a closure over $self, that calls ->validate() on it's parameter list and unpacks the result
-  return sub {my $params = $self->isa('Data::Domain::Struct') ? $self->validate({@_})
-                                                              : $self->validate(\@_);
-              return does($params, 'ARRAY') ? @$params
-                   : does($params, 'HASH')  ? %$params
-                   :                          $params};
-}
-
-
-sub meth_signature {
-  my ($self) = @_;
-  my $sig = $self->func_signature;
-
-  # same as func_signature, but the first param is set apart since it is the invocant of the method
-  return sub {my $obj = shift;
-              return ($obj, &$sig)};
-}
-
-
-
 
 
 sub _check_has {
@@ -419,70 +484,6 @@ sub _check_returns {
     push @msgs, $args => $msg if $msg;
   }
   return @msgs;
-}
-
-
-
-
-#----------------------------------------------------------------------
-# METHODS FOR INTERNAL USE
-#----------------------------------------------------------------------
-
-sub msg {
-  my ($self, $msg_id, @args) = @_;
-  my $msgs     = $self->{-messages};
-  my $name     = $self->name;
-
-  # if using a coderef, these args will be passed to it
-  my @msgs_call_args = ($name, $msg_id, @args);
-  shift @msgs_call_args if $USE_OLD_MSG_API;
-
-  # perl v5.22 and above warns if there are too many @args for sprintf.
-  # The line below prevents that warning
-  no if $] ge '5.022000', warnings => 'redundant';
-
-  # if there is a user-defined message, return it
-  if (defined $msgs) { 
-    for (ref $msgs) {
-      /^CODE/ and return $msgs->(@msgs_call_args);                # user function
-      /^$/    and return "$name: $msgs";                          # user constant string
-      /^HASH/ and do { if (my $msg_string =  $msgs->{$msg_id}) {  # user hash of msgs
-                         return sprintf "$name: $msg_string", @args;
-                       }
-                       else {
-                         last; # not found in this hash - revert to $GLOBAL_MSGS below
-                       }
-                     };
-      # otherwise
-      croak "-messages option should be a coderef, a hashref or a sprintf string";
-    }
-  }
-
-  # there was no user-defined message, so use global messages
-  if (ref $GLOBAL_MSGS eq 'CODE') {
-    return $GLOBAL_MSGS->(@msgs_call_args);
-  }
-  else {
-    my $msg_entry = $GLOBAL_MSGS->{$self->subclass}{$msg_id}
-                  || $GLOBAL_MSGS->{Generic}{$msg_id}
-     or croak "no error string for message $msg_id";
-    return ref $msg_entry eq 'CODE' ? $msg_entry->(@msgs_call_args)
-                                    : sprintf "$name: $msg_entry", @args;
-  }
-}
-
-
-sub name { 
-  my ($self) = @_;
-  return $self->{-name} || $self->subclass;
-}
-
-
-sub subclass { # returns the class name without initial 'Data::Domain::'
-  my ($self) = @_;
-  my $class = ref($self) || $self;
-  (my $subclass = $class) =~ s/^Data::Domain:://;
-  return $subclass;
 }
 
 
@@ -636,6 +637,9 @@ sub _stringify {
   return $dumper->Dump;
 }
 
+#======================================================================
+# END OF PARENT CLASS -- BELOW ARE IMPLEMENTATIONS FOR SPECIFIC DOMAINS
+#======================================================================
 
 
 #======================================================================
@@ -1268,6 +1272,18 @@ sub _inspect {
 }
 
 
+
+sub func_signature {
+  my ($self) = @_;
+
+  # override the parent method : pass the parameters list as an arrayref to validate(),
+  # and return the validated datatree as an array
+  return sub {my $params =  $self->validate(\@_);  @$params};
+}
+
+
+
+
 #======================================================================
 package Data::Domain::Struct;
 #======================================================================
@@ -1402,6 +1418,16 @@ sub _field_matches {
 }
 
 
+sub func_signature {
+  my ($self) = @_;
+
+  # override the parent method : treat the parameters list as a hash,
+  # and return the validated datatree as a hashref
+  return sub {my $params =  $self->validate({@_});  %$params};
+}
+
+
+
 #======================================================================
 package Data::Domain::One_of;
 #======================================================================
@@ -1437,6 +1463,20 @@ sub _inspect {
 }
 
 
+sub func_signature {
+  my ($self) = @_;
+
+  # take a reference to the func_signature implementation for the
+  # first option ... assuming all remaining options have the same
+  # structure. This wil not work in all cases, but is better than nothing.
+  my $first_sig_ref = $self->{-options}[0]->can("func_signature");
+
+  # invoke that implementation on $self
+  return $self->$first_sig_ref;
+}
+
+
+
 #======================================================================
 package Data::Domain::All_of;
 #======================================================================
@@ -1469,6 +1509,11 @@ sub _inspect {
   }
   return @msgs ? \@msgs : undef;
 }
+
+
+# func_signature : reuse the implementation of the "One_of" domain
+*func_signature = \&Data::Domain::One_of::func_signature;
+
 
 
 #======================================================================
