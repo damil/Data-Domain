@@ -47,6 +47,7 @@ BEGIN {
     Regexp    => [ -does    => 'Regexp' ],
     Obj       => [ -blessed => 1        ],
     Class     => [ -package => 1        ],
+    Coderef   => [ -does    => 'CODE'   ],
   );
 }
 
@@ -1965,6 +1966,7 @@ logging purposes.
   my $is_of_class   = Whatever(-isa  => 'Some::Class');
   my $does_role     = Whatever(-does => 'Some::Role');
   my $has_methods   = Whatever(-can  => [qw/jump swim dance sing/]);
+  my $is_coderef    = Whatever(-does => 'CODE');
 
 The C<Data::Domain::Whatever> domain can contain any kind of Perl
 value, including C<undef> (actually this is the only domain that
@@ -2496,6 +2498,12 @@ C<< Whatever(-blessed => 1) >> (synonym to C<Blessed>)
 =head2 Class
 
 C<< Whatever(-blessed => 0, -isa => 'UNIVERSAL') >>
+
+=head2 Coderef
+
+C<< Whatever(-does => 'CODE') >>
+
+
 
 
 =head1 LAZY CONSTRUCTORS (CONTEXT DEPENDENCIES)

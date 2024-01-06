@@ -73,6 +73,10 @@ subtest "Shortcuts" => sub {
   ok(!$dom->inspect('Foo'),          "Unref / scalar");
   ok(!$dom->inspect(undef),          "Unref / undef");
 
+  $dom = Coderef;
+  ok($dom->inspect("foo"),           "Coderef / string");
+  ok(!$dom->inspect(sub {'Foo'}),    "Coderef / sub");
+  ok(!$dom->inspect(undef),          "Coderef / undef");
 };
 
 
@@ -309,6 +313,7 @@ subtest "List" => sub {
   ok($dom->inspect([]), "List fail2");
   ok(!$dom->inspect([1, 2]), "List optional");
   ok($dom->inspect([1, 2, {}]), "List wrong optional");
+  ok(!$dom->inspect([1, 2, 3, 4]), "List with additional items");
 
   $dom = List(-size => [2, 5], -all => Int);
   ok(!$dom->inspect([1, 2, 3]), "List ok");
@@ -336,6 +341,12 @@ subtest "List" => sub {
 
   $dom = eval {List(-items => [String, Num], -size => [5, 2])};
   ok(!$dom && $@ =~ m(min/max), "List invalid min/max size");
+
+  $dom = List(-items => [Int, Num], -all => Empty);
+  ok(!$dom->inspect([1, 2]),   "Fixed list, correct input");
+  my $msg = $dom->inspect([1, 2, 3]);
+  note explain $msg;
+  ok($dom->inspect([1, 2, 3]), "Fixed list, incorrect input");
 };
 
 #----------------------------------------------------------------------
