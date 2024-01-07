@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use Test::More;
-use Test::NoWarnings;
+use Test::Warnings;
 use Data::Domain qw/:all/;
 use Try::Tiny;
 use Time::HiRes  qw/gettimeofday/;
