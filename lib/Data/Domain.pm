@@ -2043,9 +2043,7 @@ on the parameters array C<@_>. This can be done either explicitly :
 
 or it can be done implicitly through Perl's arcane syntax for function calls
 
-  &$sig;
-
-that makes current C<@_> visible to the called subroutine.
+  &$sig; # current @_ is made visible to the $sig subroutine
 
 Arguments unpacking may not work properly for domains that have varying datastructures,
 like for example C<< Any_of(List(...), Struct(...))  >>. Such a domain would accept either
@@ -2106,7 +2104,7 @@ If true, the data must be defined. If false, the data must be undef.
 
 =back
 
-The C<Whatever> is mostly used together with some of the general
+The C<Whatever> domain is mostly used together with some of the general
 options described above, like C<-true>, C<-does>, C<-can>, etc.
 The most common combinations are encapsulated under their own domain
 names : see L</BUILTIN SHORTCUTS>.
@@ -2305,11 +2303,11 @@ The data must not match the supplied regex.
 
 =item -min
 
-The data must be greater or equal to the supplied value.
+The data must be stringwise greater or equal to the supplied value.
 
 =item -max
 
-The data must be smaller or equal to the supplied value.
+The data must be stringwise smaller or equal to the supplied value.
 
 =item -range
 
@@ -3134,7 +3132,7 @@ Laurent Dami, E<lt>dami at cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2006-2023 by Laurent Dami.
+Copyright 2006-2024 by Laurent Dami.
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
