@@ -24,7 +24,7 @@ my $t2 = $dom->validate(undef);
 ok $t2->[0] > $t1->[0] || ($t2->[0] == $t1->[0] && $t2->[1] >= $t1->[1]), "-default calling a sub";
 
 # -default with a sub that uses the $context
-$dom = List(-all => String(-default => sub {join ",", shift->{path}->@*}));
+$dom = List(-all => String(-default => sub {join ",", @{shift->{path}}}));
 $val = $dom->validate([undef, 999, undef]);
 is_deeply $val, [0, 999, 2], "sub for -default uses the context";
 
