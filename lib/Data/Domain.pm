@@ -1,7 +1,9 @@
+use 5.010;
+use utf8;
+
 #======================================================================
 package Data::Domain; # documentation at end of file
 #======================================================================
-use 5.010;
 use strict;
 use warnings;
 use Carp;
@@ -159,42 +161,42 @@ my $builtin_msgs = {
     },
   },
 
-  "franÁais" => {
+  "fran√ßais" => {
     Generic => {
-      UNDEFINED     => "donnÈe non dÈfinie",
+      UNDEFINED     => "donn√©e non d√©finie",
       INVALID       => "incorrect",
       TOO_SMALL     => "plus petit que le minimum '%s'",
       TOO_BIG       => "plus grand que le maximum '%s'",
       EXCLUSION_SET => "fait partie des valeurs interdites",
-      MATCH_TRUE    => _msg_bool("doit Ítre", "vrai", "faux"),
+      MATCH_TRUE    => _msg_bool("doit √™tre", "vrai", "faux"),
       MATCH_ISA     => "n'est pas un  '%s'",
-      MATCH_CAN     => "n'a pas la mÈthode '%s'",
+      MATCH_CAN     => "n'a pas la m√©thode '%s'",
       MATCH_DOES    => "ne se comporte pas comme un '%s'",
-      MATCH_BLESSED => _msg_bool("doit Ítre", "blessed", "unblessed"),
-      MATCH_PACKAGE => _msg_bool("doit Ítre", "un package", "un non-package"),
-      MATCH_REF     => _msg_bool("doit Ítre", "une rÈfÈrence", "une non-rÈfÈrence"),
-      MATCH_SMART   => "n'obÈit pas au smart-match '%s'",
-      MATCH_ISWEAK  => _msg_bool("doit Ítre", "une weak reference", "une strong reference"),
-      MATCH_READONLY=> _msg_bool("doit Ítre", "readonly", "non-readonly"),
-      MATCH_TAINTED => _msg_bool("doit Ítre", "tainted", "untainted"),
+      MATCH_BLESSED => _msg_bool("doit √™tre", "blessed", "unblessed"),
+      MATCH_PACKAGE => _msg_bool("doit √™tre", "un package", "un non-package"),
+      MATCH_REF     => _msg_bool("doit √™tre", "une r√©f√©rence", "une non-r√©f√©rence"),
+      MATCH_SMART   => "n'ob√©it pas au smart-match '%s'",
+      MATCH_ISWEAK  => _msg_bool("doit √™tre", "une weak reference", "une strong reference"),
+      MATCH_READONLY=> _msg_bool("doit √™tre", "readonly", "non-readonly"),
+      MATCH_TAINTED => _msg_bool("doit √™tre", "tainted", "untainted"),
     },
     Whatever => {
-      MATCH_DEFINED => _msg_bool("doit Ítre", "dÈfini", "non-dÈfini"),
+      MATCH_DEFINED => _msg_bool("doit √™tre", "d√©fini", "non-d√©fini"),
     },
     Num    => {INVALID => "nombre incorrect",},
     Date   => {INVALID => "date incorrecte",},
     String => {
-      TOO_SHORT        => "moins de %d caractËres",
-      TOO_LONG         => "plus de %d caractËres",
-      SHOULD_MATCH     => "devrait Ítre reconnu par la regex '%s'",
-      SHOULD_NOT_MATCH => "ne devrait pas Ítre reconnu par la regex '%s'",
+      TOO_SHORT        => "moins de %d caract√®res",
+      TOO_LONG         => "plus de %d caract√®res",
+      SHOULD_MATCH     => "devrait √™tre reconnu par la regex '%s'",
+      SHOULD_NOT_MATCH => "ne devrait pas √™tre reconnu par la regex '%s'",
     },
     Handle => {INVALID     => "n'est pas une filehandle ouverte"},
-    Enum   => {NOT_IN_LIST => "n'appartient pas ‡ la liste ÈnumÈrÈe",},
+    Enum   => {NOT_IN_LIST => "n'appartient pas √† la liste √©num√©r√©e",},
     List => {
       NOT_A_LIST => "n'est pas une arrayref",
-      TOO_SHORT  => "moins de %d ÈlÈments",
-      TOO_LONG   => "plus de %d ÈlÈments",
+      TOO_SHORT  => "moins de %d √©l√©ments",
+      TOO_LONG   => "plus de %d √©l√©ments",
       ANY        => "doit avoir au moins un '%s'",
     },
     Struct => {
@@ -428,10 +430,11 @@ sub subclass { # returns the class name without initial 'Data::Domain::'
 sub _initial_inspect_context {
   my ($self, $data, %extra) = @_;
 
-  return {root => $data,
-          flat => {},
-          path => [],
-          list => [],
+  return {root       => $data,
+          flat       => {},
+          path       => [],
+          list       => [],
+          valid_data => undef,
           %extra,
         };
 }
@@ -1273,7 +1276,6 @@ sub _inspect {
 }
 
 
-
 sub func_signature {
   my ($self) = @_;
 
@@ -1281,9 +1283,6 @@ sub func_signature {
   # and return the validated datatree as an array
   return sub {my $params =  $self->validate(\@_);  @$params};
 }
-
-
-
 
 #======================================================================
 package Data::Domain::Struct;
@@ -1341,10 +1340,6 @@ sub new {
 
   return $self;
 }
-
-
-
-
 
 
 sub _inspect {
@@ -1516,14 +1511,14 @@ sub _inspect {
 *func_signature = \&Data::Domain::One_of::func_signature;
 
 
-
 #======================================================================
+
 1;
 
 
 __END__
 
-=encoding ISO8859-1
+=encoding UTF-8
 
 =head1 NAME
 
@@ -2719,7 +2714,7 @@ The domain below accepts hashrefs with a C<country> and a C<city>,
 but also checks that the city actually belongs to the given country :
 
   %SOME_CITIES = {
-     Switzerland => [qw/GenËve Lausanne Bern Zurich Bellinzona/],
+     Switzerland => [qw/Gen√®ve Lausanne Bern Zurich Bellinzona/],
      France      => [qw/Paris Lyon Marseille Lille Strasbourg/],
      Italy       => [qw/Milano Genova Livorno Roma Venezia/],
   };
@@ -2871,7 +2866,7 @@ for english (the default) and for french : these can be chosen through
 the C<messages> class method :
 
   Data::Domain->messages('english');  # the default
-  Data::Domain->messages('franÁais');
+  Data::Domain->messages('fran√ßais');
 
 The same method can also receive  a custom table.
 
