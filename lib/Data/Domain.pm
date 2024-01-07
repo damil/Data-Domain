@@ -219,6 +219,11 @@ $GLOBAL_MSGS = $builtin_msgs->{english};
 # PUBLIC METHODS
 #----------------------------------------------------------------------
 
+sub new {
+  croak "Data::Domain is an abstract class; use subclassses for instantiating domains";
+}
+
+
 sub messages { # class method
   my ($class, $new_messages) = @_;
   croak "messages() is a class method in Data::Domain" 
@@ -1616,7 +1621,8 @@ A I<data domain> is a description of a set of values, either scalar or
 structured (arrays or hashes, possibly nested).  The description can include many
 constraints, like minimal or maximal values, regular expressions,
 required fields, forbidden fields, and also contextual
-dependencies. From that description, one can then invoke the domain's
+dependencies (for ex. one date must be posterior to another date).
+From that description, one can then invoke the domain's
 C<inspect> method to check if a given value belongs to the domain or
 not. In case of mismatch, a structured set of error messages is
 returned, giving detailed explanations about what was wrong.
@@ -1662,7 +1668,7 @@ datatrees in the context of automated tests.
 There are several other packages in CPAN doing data validation; these
 are briefly listed in the L</"SEE ALSO"> section.
 
-=head1 COMPATIBILITY WARNING : API CHANGE FOR CODEREFS
+=head1 COMPATIBILITY WARNING : API CHANGE FOR MESSAGE CODEREFS
 
 Starting with version 1.13, the API for calling message coderefs has
 changed and is now in the form
@@ -1694,7 +1700,7 @@ be tedious to write
     ...
   );
 
-so for each of its builtin domain constructors, C<Data::Domain>
+so for each builtin domain constructor, C<Data::Domain>
 exports a plain function that just calls C<new> on the appropriate
 subclass; these functions are all exported in in a group called
 C<:constructors>, and allow us to write more compact code :
@@ -1714,13 +1720,13 @@ in L</"BUILTIN DOMAIN CONSTRUCTORS">.
   # or
   use Data::Domain qw/:shortcuts/;
   # or
-  use Data::Domain qw/True False Defined Undef Blessed Unblessed Regexp
+  use Data::Domain qw/True False Defined Undef Blessed Unblessed Regexp Coderef
                       Obj Class/;
 
 The C<:shortcuts> export group contains a number of convenience
 functions that call the L</Whatever> domain constructor with
 various pre-built options. Precise definitions for each of these
-functions will be given below in L</"BUILTIN SHORTCUTS">.
+functions are given below in L</"BUILTIN SHORTCUTS">.
 
 =head2 Renaming imported functions
 
