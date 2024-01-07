@@ -1809,7 +1809,7 @@ this option is equivalent to C<-optional>.
 
 If C<-default> is a coderef, that subroutine will be called with the current
 context as parameter (see L</Structure of context>); the resulting scalar value
-in inserted within the tree.
+is inserted within the tree.
 
 
 =item C<-name>
