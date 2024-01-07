@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 use Test::More tests => 20;
-use Test::NoWarnings;
+use Test::Warnings;
 use Clone qw/clone/;
 
 
