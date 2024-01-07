@@ -238,8 +238,12 @@ sub inspect {
   $context ||= $self->_initial_inspect_context($data);
 
   if (!defined $data) {
+
     # in validation mode, insert the default value into the tree of valid data
-    $context->{valid_data} = $self->{-default} if $context->{in_validation_mode};
+    if (exists $context->{gather_valid_data} && exists $self->{-default}) { 
+      $context->{gather_valid_data} = does($self->{-default}, 'CODE') ? $self->{-default}->($context)
+                                                                      : $self->{-default};
+    }
 
     # success if data was optional;
     return if $self->{-optional} or exists $self->{-default};
@@ -251,7 +255,7 @@ sub inspect {
   else { # if $data is defined
 
     # remember the value within the tree of valid data
-    $context->{valid_data} = $data if $context->{in_validation_mode};
+    $context->{gather_valid_data} = $data if exists $context->{gather_valid_data};
 
     # check some general properties
     if (my $isa = $self->{-isa}) {
@@ -319,11 +323,11 @@ sub validate {
   my ($self, $data) = @_;
 
   # inspect the data
-  my $context = $self->_initial_inspect_context($data, in_validation_mode => 1);
+  my $context = $self->_initial_inspect_context($data, gather_valid_data => 1);
   my $msg     = $self->inspect($data, $context);
   
   # return the validated data tree if there is no error message
-  return $context->{valid_data} if !$msg;
+  return $context->{gather_valid_data} if !$msg;
 
   # otherwise, die with the error message
   croak $self->name . ": invalid data because " . $self->stringify_msg($msg);
@@ -434,7 +438,6 @@ sub _initial_inspect_context {
           flat       => {},
           path       => [],
           list       => [],
-          valid_data => undef,
           %extra,
         };
 }
@@ -1192,7 +1195,7 @@ sub _inspect {
 
   # build a shallow copy of the data, so that default values can be inserted
   my @valid_data;
-  @valid_data = @$data if $context->{in_validation_mode};
+  @valid_data = @$data if exists $context->{gather_valid_data};
 
 
   if (defined $self->{-min_size} && @$data < $self->{-min_size}) {
@@ -1224,7 +1227,7 @@ sub _inspect {
     $has_invalid ||= $msgs[$i];
 
     # re-inject the valid data for that slot
-    $valid_data[$i] = $context->{valid_data} if $context->{in_validation_mode};
+    $valid_data[$i] = $context->{gather_valid_data} if exists $context->{gather_valid_data};
   }
 
   # check the -all condition (can be a single domain or an arrayref of domains)
@@ -1240,7 +1243,8 @@ sub _inspect {
       $has_invalid ||= $msgs[$i];
 
       # re-inject the valid data for that slot
-      $valid_data[$i] = $context->{valid_data} if $context->{in_validation_mode} && not defined $valid_data[$i];
+      $valid_data[$i] = $context->{gather_valid_data} if exists $context->{gather_valid_data}
+                                                      && not defined $valid_data[$i];
     }
   }
 
@@ -1270,7 +1274,7 @@ sub _inspect {
   }
 
   # re-inject the whole valid array into the context
-  $context->{valid_data} = \@valid_data if $context->{in_validation_mode};
+  $context->{gather_valid_data} = \@valid_data if exists $context->{gather_valid_data};
 
   return; # OK, no error
 }
@@ -1354,7 +1358,7 @@ sub _inspect {
 
   # build a shallow copy of the data, so that default values can be inserted
   my %valid_data;
-  %valid_data = %$data if $context->{in_validation_mode};
+  %valid_data = %$data if exists $context->{gather_valid_data};
 
 
   # check if there are any forbidden fields
@@ -1379,7 +1383,7 @@ sub _inspect {
     $msgs{$field}  = $msg if $msg;
 
     # re-inject the valid data for that field
-    $valid_data{$field} = $context->{valid_data} if $context->{in_validation_mode};
+    $valid_data{$field} = $context->{gather_valid_data} if exists $context->{gather_valid_data};
   }
 
   # check the List domain for keys
@@ -1399,7 +1403,7 @@ sub _inspect {
   }
 
   # re-inject the whole valid tree into the context
-  $context->{valid_data} = \%valid_data if $context->{in_validation_mode};
+  $context->{gather_valid_data} = \%valid_data if exists $context->{gather_valid_data};
 
   return keys %msgs ? \%msgs : undef;
 }
@@ -1529,10 +1533,10 @@ Data::Domain - Data description and validation
   use Data::Domain qw/:all/;
 
   # some basic domains
-  my $int_dom      = Int(-min => 3, -max => 18);
-  my $nat_dom      = Nat(-max => 100); # natural numbers
+  my $int_dom      = Int(-min => -123, -max => 456);
+  my $nat_dom      = Nat(-max => 100, -default => sub {int(rand(100))});
   my $num_dom      = Num(-min => 3.33, -max => 18.5);
-  my $string_dom   = String(-min_length => 2, -optional => 1);
+  my $string_dom   = String(-min_length => 2);
   my $handle_dom   = Handle;
   my $enum_dom     = Enum(qw/foo bar buz/);
   my $int_list_dom = List(-min_size => 1, -all => Int, -default => [1, 2, 3]);
@@ -1548,7 +1552,7 @@ Data::Domain - Data description and validation
   die $domain->stringify_msg($error_messages) if $error_messages;
 
   # using the domain to get back a tree of validated data
-  my $valid_tree = $domain->validate($initial_tree); # will return a copy with inserted default values;
+  my $valid_tree = $domain->validate($initial_tree); # will return a copy with default values inserted;
                                                      # will die if there are validation errors
 
   # using the domain for unpacking subroutine arguments
@@ -1796,6 +1800,11 @@ error message.
 Specifies an default value to be inserted by the L</validate> method
 if the input data is C<undef> or nonexistent. For the L</inspect> method,
 this option is equivalent to C<-optional>.
+
+If C<-default> is a coderef, that subroutine will be called with the current
+context as parameter (see L</Structure of context>); the resulting scalar value
+in inserted within the tree.
+
 
 =item C<-name>
 
