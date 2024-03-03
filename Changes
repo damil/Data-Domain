@@ -1,5 +1,8 @@
 Revision history for Data-Domain
 
+1.16 03.03.2023
+  - new builtin domain 'Struict'
+
 1.15 13.01.2024
   - add missing dependency on List::Util v1.45  
 

@@ -18,7 +18,7 @@ use overload '""' => \&_stringify,
              $] < 5.037 ? ('~~' => \&_matches) : ();  # fully deprecated, so cannot be overloaded
 use match::simple ();
 
-our $VERSION = "1.15";
+our $VERSION = "1.16";
 
 our $MESSAGE;            # global var for last message from _matches()
 our $MAX_DEEP = 100;     # limit for recursive calls to inspect()
@@ -36,7 +36,7 @@ my %SHORTCUTS;
 BEGIN {
   @CONSTRUCTORS = qw/Whatever Empty
                      Num Int Nat Date Time String Handle
-                     Enum List Struct One_of All_of/;
+                     Enum List Struct Struict One_of All_of/;
   %SHORTCUTS = (
     True      => [ -true    => 1        ],
     False     => [ -true    => 0        ],
@@ -206,10 +206,11 @@ my $builtin_msgs = {
   },
 };
 
-# inherit Int and Nat messages from Num messages
+# some domains inherit messages from their parent domain
 foreach my $language (keys %$builtin_msgs) {
   $builtin_msgs->{$language}{$_} = $builtin_msgs->{$language}{Num} 
     for qw/Int Nat/;
+  $builtin_msgs->{$language}{Struict} = $builtin_msgs->{$language}{Struct};
 }
 
 # default messages : english
@@ -1434,6 +1435,26 @@ sub func_signature {
 
 
 #======================================================================
+package Data::Domain::Struict; # domain for a strict Struct :-)
+#======================================================================
+use strict;
+use warnings;
+use Carp;
+use Scalar::Does qw/does/;
+our @ISA = 'Data::Domain::Struct';
+
+sub new {
+  my $class = shift;
+  my $self  = $class->SUPER::new(@_);
+
+  not exists $self->{-exclude} or croak "Struict(...): invalid option: '-exclude'";
+  $self->{-exclude} = '*';
+
+  return $self;
+}
+
+
+#======================================================================
 package Data::Domain::One_of;
 #======================================================================
 use strict;
@@ -2495,8 +2516,8 @@ Specifies which fields are not allowed in the structure. The exclusion
 may be specified as an arrayref of field names, as a compiled regular
 expression, or as the string constant 'C<*>' or 'C<all>' (meaning that
 no hash key will be allowed except those explicitly listed in the
-C<-fields> option.
-
+C<-fields> option. The L</Struict> domain described below is syntactic sugar
+for a C<Struct> domain with option C<< -exclude => '*' >> automatically enabled.
 
 =item -may_ignore
 
@@ -2545,6 +2566,15 @@ C<$err> will contain :
     age      => "Int: invalid number",
     -exclude => "Struct: contains forbidden field(s): 'bar', 'foo'",
   }
+
+
+=head2 Struict
+
+  my $domain = Struict(foo => Int, bar => String);
+
+This is a pun for a "strict Struct" domain : it behaves exactly like C</Struct>, except
+that the option C<< -exclude => '*' >> is automatically enabled : therefore the domain is
+"strict" in the sense that it does not accept any additional key in the input hashref.
 
 
 =head2 One_of
