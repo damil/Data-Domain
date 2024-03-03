@@ -3101,6 +3101,10 @@ Internal utility method for generating an error message.
 Method that returns the short name of the subclass of C<Data::Domain> (i.e.
 returns 'Int' for C<Data::Domain::Int>).
 
+=head3 name
+
+Returns the C<-name> domain parameter, or, if absent, the subclass.
+
 =head3 _expand_range
 
 Internal utility method for converting a "range" parameter
