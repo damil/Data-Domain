@@ -47,6 +47,16 @@ ok ! $val, "invalid input";
 like $msg, qr/\bbar\b.*?invalid number/, "proper error msg";
 
 
+# -if_absent
+$dom = Struct(arg1 => String(-default => 'foo'), arg2 => String(-if_absent => 'bar'));
+$val = $dom->validate({});
+is_deeply($val, {arg1 => 'foo', arg2 => 'bar'}, "-if_absent when absent");
+$val = $dom->validate({arg1 => 'bar', arg2 => 'be', arg3 => 'cue'});
+is_deeply($val, {arg1 => 'bar', arg2 => 'be', arg3 => 'cue'}, "-if_absent not applied");
+$val = $dom->validate({arg1 => undef, arg2 => undef, arg3 => 'cue'});
+is_deeply($val, {arg1 => 'foo', arg2 => undef, arg3 => 'cue'}, "-if_absent with explicit undef");
+
+
 # optional sublist
 $dom = List(String, List(-all => String, -optional => 1), String);
 $val = $dom->validate(['foo', undef, 'bar']);

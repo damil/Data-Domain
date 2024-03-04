@@ -237,7 +237,7 @@ sub messages { # class method
 
 
 sub inspect {
-  my ($self, $data, $context) = @_;
+  my ($self, $data, $context, $is_absent) = @_;
   no warnings 'recursion';
 
   # build a context if this is the top-level call
@@ -247,13 +247,15 @@ sub inspect {
 
     # in validation mode, insert the default value into the tree of valid data
     if (exists $context->{gather_valid_data}) {
-      $context->{gather_valid_data} = exists $self->{-default} ? does($self->{-default}, 'CODE') ? $self->{-default}->($context)
-                                                                                                 : $self->{-default}
-                                                               : undef;
+      my $apply_default             = sub {my $default = $self->{$_[0]}; 
+                                           does($default, 'CODE') ? $default->($context) : $default};
+      $context->{gather_valid_data} = exists $self->{-default}                 ? $apply_default->('-default')
+                                    : $is_absent && exists $self->{-if_absent} ? $apply_default->('-if_absent')
+                                    :                                            undef;
     }
 
     # success if data was optional;
-    return if $self->{-optional} or exists $self->{-default};
+    return if $self->{-optional} or exists $self->{-default} or exists $self->{-if_absent};
 
     # otherwise fail, except for the 'Whatever' domain which is the only one to accept undef
     return $self->msg(UNDEFINED => '')
@@ -593,7 +595,7 @@ my @common_options = qw/-optional -name -messages
                         -true -isa -can -does -matches -ref
                         -has -returns
                         -blessed -package -isweak -readonly -tainted
-                        -default/;
+                        -default -if_absent/;
 
 sub _parse_args {
   my ($args_ref, $options_ref, $default_option, $arg_type) = @_;
@@ -1230,7 +1232,7 @@ sub _inspect {
     local $context->{path} = [@{$context->{path}}, $i];
     my $subdomain  = $self->_build_subdomain($items->[$i], $context)
       or next;
-    $msgs[$i]      = $subdomain->inspect($data->[$i], $context);
+    $msgs[$i]      = $subdomain->inspect($data->[$i], $context, ! exists $data->[$i]);
     $has_invalid ||= $msgs[$i];
 
     # re-inject the valid data for that slot
@@ -1386,7 +1388,7 @@ sub _inspect {
     local $context->{path} = [@{$context->{path}}, $field];
     my $field_spec = $self->{-fields}{$field};
     my $subdomain  = $self->_build_subdomain($field_spec, $context);
-    my $msg        = $subdomain->inspect($data->{$field}, $context);
+    my $msg        = $subdomain->inspect($data->{$field}, $context, ! exists $data->{$field});
     $msgs{$field}  = $msg if $msg;
 
     # re-inject the valid data for that field
@@ -1833,6 +1835,16 @@ If C<-default> is a coderef, that subroutine will be called with the current
 context as parameter (see L</Structure of context>); the resulting scalar value
 is inserted within the tree.
 
+=item C<-if_absent>
+
+Like C<-default> except that it will only be applied when a data member
+I<does not exist> in its parent structure (i.e. a missing field in a hash, or
+an element outside of the range of an array).
+
+This is useful for example when passing named arguments to a function,
+if you want to explicitly allow to pass C<undef> to an argument :
+
+   some_func(arg1 => 'foo', arg2 => undef) # arg1 is defined, arg2 is undef but present, arg3 is absent
 
 =item C<-name>
 
