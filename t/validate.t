@@ -46,6 +46,14 @@ try {$val = $dom->validate({foo => "foo", bar => "bar"})} catch {$msg = $_};
 ok ! $val, "invalid input";
 like $msg, qr/\bbar\b.*?invalid number/, "proper error msg";
 
+
+# optional sublist
+$dom = List(String, List(-all => String, -optional => 1), String);
+$val = $dom->validate(['foo', undef, 'bar']);
+$expected = ['foo', undef, 'bar'];
+is_deeply($val, $expected, "optional sublist");
+
+
 # func_signature
 { my $sig = List(Int, Int, Int(-default => 1))->func_signature;
   sub func_extractor {

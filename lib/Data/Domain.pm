@@ -246,9 +246,10 @@ sub inspect {
   if (!defined $data) {
 
     # in validation mode, insert the default value into the tree of valid data
-    if (exists $context->{gather_valid_data} && exists $self->{-default}) { 
-      $context->{gather_valid_data} = does($self->{-default}, 'CODE') ? $self->{-default}->($context)
-                                                                      : $self->{-default};
+    if (exists $context->{gather_valid_data}) {
+      $context->{gather_valid_data} = exists $self->{-default} ? does($self->{-default}, 'CODE') ? $self->{-default}->($context)
+                                                                                                 : $self->{-default}
+                                                               : undef;
     }
 
     # success if data was optional;
